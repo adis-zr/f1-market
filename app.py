@@ -33,7 +33,14 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Mailgun configuration
 app.config['MAILGUN_API_KEY'] = os.environ.get('MAILGUN_API_KEY')
 app.config['MAILGUN_DOMAIN'] = os.environ.get('MAILGUN_DOMAIN')
-app.config['MAILGUN_FROM_EMAIL'] = os.environ.get('MAILGUN_FROM_EMAIL', f'noreply@{os.environ.get("MAILGUN_DOMAIN", "example.com")}')
+# Default from email: if MAILGUN_DOMAIN is mg.gridstock.io, use noreply@gridstock.io
+# Otherwise use noreply@{domain} or the explicitly set MAILGUN_FROM_EMAIL
+mailgun_domain = os.environ.get('MAILGUN_DOMAIN', '')
+if mailgun_domain.startswith('mg.'):
+    default_from = f'noreply@{mailgun_domain[3:]}'  # Remove 'mg.' prefix
+else:
+    default_from = f'noreply@{mailgun_domain}' if mailgun_domain else 'noreply@example.com'
+app.config['MAILGUN_FROM_EMAIL'] = os.environ.get('MAILGUN_FROM_EMAIL', default_from)
 
 # Initialize database
 db.init_app(app)
