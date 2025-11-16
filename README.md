@@ -10,11 +10,61 @@ A Python-powered fantasy trading game where players buy and sell F1 drivers and 
 - FastF1 integration for real F1 session data
 
 ## Tech Stack
-- **Backend:** Python, FastAPI, SQLAlchemy, Pydantic
-- **Database:** SQLite (dev), PostgreSQL (prod)
-- **Scheduler:** APScheduler
-- **Data Provider:** FastF1 
-- **Frontend:** Simple HTML/JS or lightweight React (MVP)
+- **Backend:** Flask, SQLAlchemy
+- **Database:** SQLite
+- **Frontend:** HTML, CSS, JavaScript
+
+## Getting Started
+
+### Prerequisites
+- Python 3.7 or higher
+- pip (Python package manager)
+
+### Installation
+
+1. **Install Python dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Initialize the database (optional - will be created automatically on first run):**
+   ```bash
+   python init_db.py
+   ```
+
+### Running the Application
+
+1. **Start the Flask backend server:**
+   ```bash
+   python app.py
+   ```
+   The backend will run on `http://localhost:5000`
+
+2. **Serve the frontend (in a new terminal):**
+   
+   Since sessions use cookies, the frontend must be served over HTTP (not opened as a file). Use one of these options:
+   
+   **Option A: Python HTTP Server**
+   ```bash
+   python -m http.server 8000
+   ```
+   Then open `http://localhost:8000` in your browser.
+   
+   **Option B: Any other web server**
+   - Serve the `index.html`, `app.js`, and `style.css` files from any web server
+   - Make sure it's accessible via HTTP (e.g., `http://localhost:8000`)
+
+3. **Access the application:**
+   - Open your browser and navigate to `http://localhost:8000` (or whatever port you used)
+   - The frontend will communicate with the backend at `http://localhost:5000`
+
+### API Endpoints
+
+- `POST /login` - Login with username and password
+- `POST /register` - Register a new user
+- `GET /me` - Get current logged-in user
+- `POST /logout` - Logout current user
+- `GET /health` - Health check endpoint
 
 ## Project Structure (Planned)
 

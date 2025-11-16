@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="login-container">
+        <h1 class="main-title">F1 Stock Market</h1>
+        <div class="login-box">
+            <div id="userInfo" style="display: none;">
+                <h2>Welcome!</h2>
+                <div class="user-details">
+                    <p><strong>Username:</strong> <span id="displayUsername"></span></p>
+                    <p><strong>Role:</strong> <span id="displayRole"></span></p>
+                </div>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+            
+            <div id="loginSection">
+                <div id="emailStep">
+                    <form id="emailForm">
+                        <div class="form-group">
+                            <input type="email" id="email" name="email" placeholder="Email address" required>
+                        </div>
+                        <button type="submit" class="login-btn">Send OTP</button>
+                    </form>
+                </div>
+                
+                <div id="otpStep" style="display: none;">
+                    <p class="otp-instruction">Enter the 6-digit code sent to <strong id="emailDisplay"></strong></p>
+                    <form id="otpForm">
+                        <div class="form-group">
+                            <input type="text" id="otp" name="otp" placeholder="Enter OTP" maxlength="6" pattern="[0-9]{6}" required>
+                        </div>
+                        <button type="submit" class="login-btn">Verify OTP</button>
+                        <button type="button" id="backToEmail" class="back-btn">Back</button>
+                    </form>
+                </div>
+            </div>
+            
+            <div id="message" class="message"></div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+
