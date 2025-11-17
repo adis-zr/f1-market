@@ -8,13 +8,21 @@ from app import app, db
 from models import User, OTP
 
 def reset_database():
+    env = os.environ.get('FLASK_ENV', 'development').lower()
+    db_url = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+
+    if env == 'production':
+        raise RuntimeError("Refusing to run in production environment")
+
+    print(f"Environment: {env}")
+    print(f"Database URL: {db_url}")
+
     """Delete and recreate the database with the new schema."""
-    basedir = os.path.abspath(os.path.dirname(__file__))
-    db_path = os.path.join(basedir, "app.db")
+    env = os.environ.get('FLASK_ENV', 'development').lower()
     
     with app.app_context():
         # Drop all tables
-        print("Dropping existing tables...")
+        print(f"Dropping existing tables (environment: {env})...")
         db.drop_all()
         
         # Create all tables with the new schema
