@@ -54,3 +54,4 @@ class OTP(db.Model):
     def is_valid(self):
         """Check if OTP is still valid (not expired and not used)."""
         return not self.used and datetime.utcnow() < self.expires_at
+

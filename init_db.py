@@ -4,7 +4,7 @@ Note: With OTP-based authentication, users are created automatically on first lo
 This script can be used to pre-create users if needed.
 """
 from app import app, db
-from models import User, UserRole
+from db_models import User, UserRole
 
 
 def init_users():

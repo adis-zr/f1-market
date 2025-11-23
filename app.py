@@ -1,7 +1,7 @@
 """Main Flask application."""
 from flask import Flask
 from flask_cors import CORS
-from models import db
+from db_models import db
 from config import create_app_config
 from routes import bp as main_bp
 from auth import bp as auth_bp

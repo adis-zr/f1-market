@@ -3,7 +3,7 @@ import re
 import random
 import requests
 from flask import Blueprint, request, jsonify, session, current_app
-from models import db, User, UserRole, OTP
+from db_models import db, User, UserRole, OTP
 from config import is_mailgun_configured
 from datetime import datetime, timedelta
 

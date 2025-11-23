@@ -5,7 +5,7 @@ WARNING: This will delete all existing data!
 """
 import os
 from app import app, db
-from models import User, OTP
+from db_models import User, OTP
 
 def reset_database():
     env = os.environ.get('FLASK_ENV', 'development').lower()
