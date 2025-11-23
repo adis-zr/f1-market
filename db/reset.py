@@ -4,8 +4,8 @@ This will delete the existing database and recreate it with the updated schema.
 WARNING: This will delete all existing data!
 """
 import os
-from app import app, db
-from db_models import User, OTP
+from app import app
+from db import db, User, OTP
 
 def reset_database():
     env = os.environ.get('FLASK_ENV', 'development').lower()
@@ -41,3 +41,4 @@ if __name__ == "__main__":
         reset_database()
     else:
         print("Cancelled.")
+

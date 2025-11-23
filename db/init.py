@@ -3,8 +3,8 @@ Script to initialize the database with some default users.
 Note: With OTP-based authentication, users are created automatically on first login.
 This script can be used to pre-create users if needed.
 """
-from app import app, db
-from db_models import User, UserRole
+from app import app
+from db import db, User, UserRole
 
 
 def init_users():
@@ -40,3 +40,4 @@ def init_users():
 
 if __name__ == "__main__":
     init_users()
+
