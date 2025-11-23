@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>F1 Stock Market</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -12,16 +12,54 @@
 <body>
     <div class="login-container">
         <h1 class="main-title">F1 Stock Market</h1>
-        <div class="login-box">
-            <div id="userInfo" style="display: none;">
-                <h2>Welcome!</h2>
-                <div class="user-details">
-                    <p><strong>Username:</strong> <span id="displayUsername"></span></p>
-                    <p><strong>Role:</strong> <span id="displayRole"></span></p>
+        
+        <!-- Home Page (shown when logged in) -->
+        <div id="homePage" style="display: none;">
+            <div class="home-header">
+                <div class="user-info">
+                    <span>Welcome, <strong id="displayUsername"></strong></span>
+                    <button id="logoutBtn" class="logout-btn-small">Logout</button>
                 </div>
-                <button id="logoutBtn" class="logout-btn">Logout</button>
             </div>
-            
+
+            <!-- Standings Section -->
+            <section class="standings-section">
+                <h2 class="section-title">Championship Standings</h2>
+                <div class="standings-container">
+                    <div class="standings-table-wrapper">
+                        <h3 class="table-title">Drivers Championship</h3>
+                        <div id="driverStandings" class="standings-table-container">
+                            <div class="loading">Loading driver standings...</div>
+                        </div>
+                    </div>
+                    <div class="standings-table-wrapper">
+                        <h3 class="table-title">Constructors Championship</h3>
+                        <div id="constructorStandings" class="standings-table-container">
+                            <div class="loading">Loading constructor standings...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Live Race Tracker Section -->
+            <section class="race-tracker-section">
+                <h2 class="section-title">Live Race Tracker</h2>
+                <div id="liveRaceTracker" class="race-tracker-container">
+                    <div class="loading">Checking race status...</div>
+                </div>
+            </section>
+
+            <!-- Last Race Results Section -->
+            <section id="lastRaceSection" class="last-race-section" style="display: none;">
+                <h2 class="section-title">Last Race Results</h2>
+                <div id="lastRaceResults" class="race-results-container">
+                    <div class="loading">Loading last race results...</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Login Section (shown when not logged in) -->
+        <div class="login-box">
             <div id="loginSection">
                 <div id="emailStep">
                     <form id="emailForm">

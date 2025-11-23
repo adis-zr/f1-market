@@ -105,3 +105,29 @@ def get_telemetry():
         print(f"Error in get_telemetry: {e}")
         return jsonify({'message': 'Server error occurred'}), 500
 
+
+@bp.route('/last-race', methods=['GET'])
+@require_auth
+def get_last_race():
+    """Get the last finished race with results."""
+    try:
+        service = get_f1_service()
+        season = request.args.get('season', type=int)
+        
+        last_race = service.get_last_race_results(season_year=season)
+        
+        if last_race is None:
+            return jsonify({
+                'message': 'No finished race found',
+                'race_found': False,
+            }), 404
+        
+        return jsonify({
+            'race_found': True,
+            **last_race,
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in get_last_race: {e}")
+        return jsonify({'message': 'Server error occurred'}), 500
+

@@ -62,8 +62,27 @@ def create_app_config(app: Flask) -> None:
     app.config['SPORTSMONK_API_KEY'] = os.environ.get('SPORTSMONK_API_KEY')
     app.config['F1_CACHE_TTL_MINUTES'] = int(os.environ.get('F1_CACHE_TTL_MINUTES', '10'))
 
+    # Email allowlist for OTP requests (comma-separated list)
+    allowed_emails_str = os.environ.get('OTP_ALLOWED_EMAILS', '')
+    if allowed_emails_str:
+        # Parse comma-separated list and normalize (lowercase, strip whitespace)
+        allowed_emails = [email.strip().lower() for email in allowed_emails_str.split(',') if email.strip()]
+        app.config['OTP_ALLOWED_EMAILS'] = set(allowed_emails)
+    else:
+        app.config['OTP_ALLOWED_EMAILS'] = None  # None means no allowlist (allow all)
+
 
 def is_mailgun_configured(app: Flask) -> bool:
     """Check if Mailgun is properly configured."""
     return bool(app.config['MAILGUN_API_KEY'] and app.config['MAILGUN_DOMAIN'])
+
+
+def is_email_allowed(app: Flask, email: str) -> bool:
+    """Check if an email is in the allowlist for OTP requests."""
+    allowed_emails = app.config.get('OTP_ALLOWED_EMAILS')
+    if allowed_emails is None:
+        # No allowlist configured, allow all emails
+        return True
+    # Normalize email for comparison
+    return email.strip().lower() in allowed_emails
 

@@ -352,12 +352,146 @@ class F1Service:
 
         return None
 
+    def _get_latest_finished_race(self, season_year: Optional[int] = None) -> Optional[Dict]:
+        """
+        Get the most recent finished race (stage with name 'Race' and status 'Finished')
+        for the given season year (defaults to current year).
+
+        Uses: GET /stages/season/{season_ID} with results included by default. :contentReference[oaicite:0]{index=0}
+        """
+        if season_year is None:
+            season_year = datetime.utcnow().year
+
+        season_id = self._get_season_id(season_year)
+        if not season_id:
+            print(f"Could not resolve SportMonks season ID for {season_year}")
+            return None
+
+        stages = self._make_request(f"/stages/season/{season_id}")
+        if not stages:
+            return None
+
+        if not isinstance(stages, list):
+            stages = [stages]
+
+        latest_stage = None
+        latest_ts = None
+
+        for stage in stages:
+            if not isinstance(stage, dict):
+                continue
+
+            # We only care about actual races
+            if str(stage.get("name", "")).lower() != "race":
+                continue
+
+            time_block = stage.get("time") or {}
+            status = str(time_block.get("status", "")).lower()
+            if status != "finished":
+                continue
+
+            starting_at = time_block.get("starting_at") or {}
+            ts = starting_at.get("timestamp")
+            if ts is None:
+                continue
+
+            try:
+                ts = int(ts)
+            except (TypeError, ValueError):
+                continue
+
+            if latest_ts is None or ts > latest_ts:
+                latest_ts = ts
+                latest_stage = stage
+
+        return latest_stage
+
     def get_current_session_key(self) -> Optional[int]:
         """Get the stage ID for the currently ongoing race, if any."""
         stage = self._get_current_stage()
         if not stage:
             return None
         return stage.get("id")
+
+    def get_last_race_results(
+        self, season_year: Optional[int] = None
+    ) -> Optional[Dict]:
+        """
+        Get the last finished race with results formatted for display.
+
+        Args:
+            season_year: Season year (defaults to current year)
+
+        Returns:
+            Dict containing race info and results, or None if no finished race found
+        """
+        stage = self._get_latest_finished_race(season_year)
+        if not stage:
+            return None
+
+        # Extract results from stage
+        results_block = stage.get("results")
+        if isinstance(results_block, dict) and isinstance(results_block.get("data"), list):
+            results = results_block["data"]
+        elif isinstance(results_block, list):
+            results = results_block
+        else:
+            results = []
+
+        # Format results for display
+        formatted_results = []
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+
+            # Extract driver info
+            driver_obj = result.get("driver")
+            if isinstance(driver_obj, dict) and "data" in driver_obj:
+                driver_obj = driver_obj["data"]
+            
+            driver_name = None
+            if isinstance(driver_obj, dict):
+                driver_name = (
+                    driver_obj.get("name")
+                    or driver_obj.get("full_name")
+                    or f"{driver_obj.get('first_name', '')} {driver_obj.get('last_name', '')}".strip()
+                )
+
+            # Extract constructor info
+            team_obj = result.get("team") or result.get("constructor")
+            if isinstance(team_obj, dict) and "data" in team_obj:
+                team_obj = team_obj["data"]
+            
+            constructor_name = None
+            if isinstance(team_obj, dict):
+                constructor_name = team_obj.get("name") or ""
+
+            formatted_results.append({
+                "position": result.get("position"),
+                "driver_id": str(result.get("driver_id", "")),
+                "driver_name": driver_name or "",
+                "constructor_id": str(result.get("team_id", "")),
+                "constructor_name": constructor_name or "",
+                "points": float(result.get("points", 0)) if result.get("points") is not None else 0.0,
+                "time": result.get("time") or result.get("race_time"),
+            })
+
+        # Sort by position
+        formatted_results.sort(key=lambda r: (r["position"] if r["position"] is not None else 999))
+
+        # Extract race metadata
+        time_block = stage.get("time") or {}
+        starting_at = time_block.get("starting_at") or {}
+
+        return {
+            "stage_id": stage.get("id"),
+            "race_name": stage.get("name") or "Race",
+            "track_id": stage.get("track_id"),
+            "season_id": stage.get("season_id"),
+            "date": starting_at.get("date") if isinstance(starting_at, dict) else None,
+            "timestamp": starting_at.get("timestamp") if isinstance(starting_at, dict) else None,
+            "results": formatted_results,
+        }
 
     def get_telemetry(self, session_key: Optional[int] = None) -> Optional[Dict]:
         """

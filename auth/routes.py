@@ -4,7 +4,7 @@ import random
 import requests
 from flask import Blueprint, request, jsonify, session, current_app
 from db import db, User, UserRole, OTP
-from config import is_mailgun_configured
+from config import is_mailgun_configured, is_email_allowed
 from datetime import datetime, timedelta
 
 bp = Blueprint('auth', __name__)
@@ -70,6 +70,10 @@ def request_otp():
 
         if not is_valid_email(email):
             return jsonify({'message': 'Invalid email format'}), 400
+
+        # Check if email is in allowlist
+        if not is_email_allowed(current_app, email):
+            return jsonify({'message': 'Email not authorized to request OTP'}), 403
 
         # Clean up expired OTPs
         expired_otps = OTP.query.filter(OTP.expires_at < datetime.utcnow()).all()
