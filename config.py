@@ -56,6 +56,12 @@ def create_app_config(app: Flask) -> None:
         default_from = f'noreply@{mailgun_domain}' if mailgun_domain else 'noreply@example.com'
     app.config['MAILGUN_FROM_EMAIL'] = os.environ.get('MAILGUN_FROM_EMAIL', default_from)
 
+    # F1 API configuration (SportsMonk)
+    app.config['F1_PROVIDER'] = os.environ.get('F1_PROVIDER', 'sportmonks')
+    app.config['F1_SPORTSMONK_BASE_URL'] = os.environ.get('F1_SPORTSMONK_BASE_URL', 'https://f1.sportmonks.com/api/v1.0')
+    app.config['SPORTSMONK_API_KEY'] = os.environ.get('SPORTSMONK_API_KEY')
+    app.config['F1_CACHE_TTL_MINUTES'] = int(os.environ.get('F1_CACHE_TTL_MINUTES', '10'))
+
 
 def is_mailgun_configured(app: Flask) -> bool:
     """Check if Mailgun is properly configured."""

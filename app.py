@@ -4,6 +4,7 @@ from flask_cors import CORS
 from db import db
 from config import create_app_config
 from api import bp as main_bp
+from api.f1_routes import bp as f1_bp
 from auth import bp as auth_bp
 
 app = Flask(__name__)
@@ -25,6 +26,7 @@ with app.app_context():
 # Register routes
 app.register_blueprint(main_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(f1_bp)
 
 
 if __name__ == '__main__':
