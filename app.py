@@ -35,11 +35,11 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 CORS(app, supports_credentials=True)
 
 # Database configuration
-database_url = os.environ.get('DATABASE_URL')
-
 if env == 'production':
+    # In production, prefer INTERNAL_PROD_DATABASE_URL, fallback to DATABASE_URL
+    database_url = os.environ.get('INTERNAL_PROD_DATABASE_URL') or os.environ.get('DATABASE_URL')
     if not database_url:
-        raise RuntimeError("DATABASE_URL must be set in production")
+        raise RuntimeError("INTERNAL_PROD_DATABASE_URL or DATABASE_URL must be set in production")
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 else:
     basedir = os.path.abspath(os.path.dirname(__file__))
