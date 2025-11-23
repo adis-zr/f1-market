@@ -36,10 +36,15 @@ CORS(app, supports_credentials=True)
 
 # Database configuration
 if env == 'production':
-    # In production, prefer INTERNAL_PROD_DATABASE_URL, fallback to DATABASE_URL
-    database_url = os.environ.get('INTERNAL_PROD_DATABASE_URL') or os.environ.get('DATABASE_URL')
+    # In production, prefer INTERNAL_PROD_DATABASE_URL
+    database_url = os.environ.get('INTERNAL_PROD_DATABASE_URL')
     if not database_url:
         raise RuntimeError("INTERNAL_PROD_DATABASE_URL or DATABASE_URL must be set in production")
+    # Ensure we use psycopg (v3) driver instead of psycopg2
+    if database_url.startswith('postgresql://'):
+        database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+    elif database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 else:
     basedir = os.path.abspath(os.path.dirname(__file__))
