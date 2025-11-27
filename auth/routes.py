@@ -2,10 +2,13 @@
 import re
 import random
 import requests
+import logging
 from flask import Blueprint, request, jsonify, session, current_app
 from db import db, User, UserRole, OTP
 from config import is_mailgun_configured, is_email_allowed
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('auth', __name__)
 
@@ -24,13 +27,24 @@ def generate_otp() -> str:
 def send_otp_email(email: str, otp_code: str, mailgun_configured: bool) -> bool:
     """Send OTP via Mailgun."""
     if not mailgun_configured:
-        print(f"[DEBUG] Would send OTP {otp_code} to {email} (Mailgun not configured)")
+        logger.warning(f"Mailgun not configured - would send OTP {otp_code} to {email}")
         return False
 
     try:
-        api_key = current_app.config['MAILGUN_API_KEY']
-        domain = current_app.config['MAILGUN_DOMAIN']
-        from_email = current_app.config['MAILGUN_FROM_EMAIL']
+        api_key = current_app.config.get('MAILGUN_API_KEY')
+        domain = current_app.config.get('MAILGUN_DOMAIN')
+        from_email = current_app.config.get('MAILGUN_FROM_EMAIL')
+
+        # Validate configuration
+        if not api_key:
+            logger.error("MAILGUN_API_KEY is not set")
+            return False
+        if not domain:
+            logger.error("MAILGUN_DOMAIN is not set")
+            return False
+        if not from_email:
+            logger.error("MAILGUN_FROM_EMAIL is not set")
+            return False
 
         subject = "Your F1 Market Login Code"
         text = f"""Your one-time password (OTP) for F1 Market is: {otp_code}
@@ -39,8 +53,11 @@ This code will expire in 10 minutes.
 
 If you didn't request this code, please ignore this email."""
 
+        url = f"https://api.mailgun.net/v3/{domain}/messages"
+        logger.info(f"Attempting to send OTP email to {email} via Mailgun (domain: {domain})")
+
         response = requests.post(
-            f"https://api.mailgun.net/v3/{domain}/messages",
+            url,
             auth=("api", api_key),
             data={
                 "from": from_email,
@@ -50,11 +67,24 @@ If you didn't request this code, please ignore this email."""
             },
             timeout=10,
         )
-        if response.status_code != 200:
-            print(f"[MAILGUN] Error {response.status_code}: {response.text}")
-        return response.status_code == 200
+
+        # Mailgun returns 200 (OK) or 202 (Accepted) for successful requests
+        if response.status_code in (200, 202):
+            logger.info(f"OTP email sent successfully to {email} (status: {response.status_code})")
+            return True
+        else:
+            logger.error(
+                f"Mailgun API error - Status: {response.status_code}, "
+                f"Response: {response.text}, "
+                f"Domain: {domain}, "
+                f"From: {from_email}"
+            )
+            return False
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error sending email to {email}: {e}", exc_info=True)
+        return False
     except Exception as e:
-        print(f"Error sending email: {e}")
+        logger.error(f"Unexpected error sending email to {email}: {e}", exc_info=True)
         return False
 
 
@@ -100,10 +130,21 @@ def request_otp():
 
         # Send OTP via email
         mailgun_configured = is_mailgun_configured(current_app)
+        logger.info(f"Requesting OTP for {email} - Mailgun configured: {mailgun_configured}")
+        
         email_sent = send_otp_email(email, otp_code, mailgun_configured)
 
         if not email_sent and mailgun_configured:
-            return jsonify({'message': 'Failed to send OTP email. Please check Mailgun configuration.'}), 500
+            logger.error(f"Failed to send OTP email to {email} despite Mailgun being configured")
+            return jsonify({
+                'message': 'Failed to send OTP email. Please check Mailgun configuration and logs.',
+                'error': 'email_send_failed'
+            }), 500
+
+        if email_sent:
+            logger.info(f"OTP successfully sent to {email}")
+        else:
+            logger.warning(f"OTP generated but not sent (Mailgun not configured) - OTP: {otp_code}")
 
         return jsonify({
             'message': 'OTP sent to your email' if email_sent else 'OTP generated (check console for debug)',

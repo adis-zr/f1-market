@@ -1,5 +1,6 @@
 """Main Flask application."""
 import os
+import logging
 from flask import Flask
 from flask_cors import CORS
 from db import db
@@ -12,6 +13,13 @@ from api.browse_routes import bp as browse_bp
 from auth import bp as auth_bp
 
 app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Configure the application
 create_app_config(app)
