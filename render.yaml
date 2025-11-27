@@ -20,21 +20,19 @@ services:
         fromDatabase:
           name: f1-market-db
           property: connectionString
-      # Optional: Uncomment and set these if you have them
-      # - key: MAILGUN_API_KEY
-      #   sync: false  # Set manually in dashboard
-      # - key: MAILGUN_DOMAIN
-      #   sync: false
-      # - key: SPORTSMONK_API_KEY
-      #   sync: false
-      # - key: OTP_ALLOWED_EMAILS
-      #   sync: false
+      - key: MAILGUN_API_KEY
+        sync: false  # Set manually in dashboard
+      - key: MAILGUN_DOMAIN
+        sync: false
+      - key: SPORTSMONK_API_KEY
+        sync: false
+      - key: OTP_ALLOWED_EMAILS
+        sync: false
 
   # Frontend Static Site
   - type: web
     name: f1-market
     env: static
-    plan: free
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: ./frontend/dist
     envVars:
@@ -46,8 +44,8 @@ services:
 
 databases:
   # PostgreSQL Database
+  # Note: If database already exists, remove the plan field to avoid downgrade errors
   - name: f1-market-db
-    plan: free  # or starter, standard, etc.
     region: oregon  # Change to your preferred region
     databaseName: f1market
     user: f1market_user
