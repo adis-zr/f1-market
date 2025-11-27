@@ -77,9 +77,12 @@ class SubpathMiddleware:
             environ['SCRIPT_NAME'] = prefix_to_use
             logger.info(f"✓ Stripped prefix '{prefix_to_use}' - new PATH_INFO: '{new_path}', SCRIPT_NAME: '{prefix_to_use}'")
         elif prefix_to_use:
-            logger.warning(f"✗ Path '{original_path}' does not start with prefix '{prefix_to_use}'")
+            # Path doesn't start with prefix - this is normal if reverse proxy already stripped it
+            # Just set SCRIPT_NAME so Flask can generate correct URLs
+            environ['SCRIPT_NAME'] = prefix_to_use
+            logger.debug(f"Path '{original_path}' doesn't start with prefix '{prefix_to_use}' (likely already stripped by reverse proxy) - setting SCRIPT_NAME only")
         else:
-            logger.info(f"No prefix detected or configured - using original path: '{original_path}'")
+            logger.debug(f"No prefix detected or configured - using original path: '{original_path}'")
         
         return self.app(environ, start_response)
 
