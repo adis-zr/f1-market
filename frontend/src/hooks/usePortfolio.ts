@@ -1,7 +1,6 @@
 import { usePositions } from './usePositions';
 import { useWallet } from './useWallet';
 import { useMemo } from 'react';
-import type { Position } from '@/api/types';
 
 export function usePortfolio() {
   const { data: positions = [], ...positionsQuery } = usePositions();

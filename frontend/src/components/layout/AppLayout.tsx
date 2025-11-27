@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { authApi } from '@/api/endpoints';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { queryKeys } from '@/hooks/queryKeys';
 
 export function AppLayout() {
   const { data: user, isLoading } = useCurrentUser();

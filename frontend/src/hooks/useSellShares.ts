@@ -3,12 +3,18 @@ import { marketsApi } from '@/api/endpoints';
 import { queryKeys } from './queryKeys';
 import type { SellSharesRequest, SellSharesResponse } from '@/api/types';
 
+interface MutationContext {
+  previousMarket: unknown;
+  previousPosition: unknown;
+  previousWallet: unknown;
+}
+
 export function useSellShares(marketId: number) {
   const queryClient = useQueryClient();
 
-  return useMutation<SellSharesResponse, Error, SellSharesRequest>({
+  return useMutation<SellSharesResponse, Error, SellSharesRequest, MutationContext>({
     mutationFn: (data) => marketsApi.sellShares(marketId, data),
-    onMutate: async (newData) => {
+    onMutate: async () => {
       // Cancel outgoing queries
       await queryClient.cancelQueries({ queryKey: queryKeys.market(marketId) });
       await queryClient.cancelQueries({ queryKey: queryKeys.position(marketId) });
@@ -21,7 +27,7 @@ export function useSellShares(marketId: number) {
 
       return { previousMarket, previousPosition, previousWallet };
     },
-    onError: (err, newData, context) => {
+    onError: (_err, _newData, context) => {
       // Rollback optimistic updates
       if (context?.previousMarket) {
         queryClient.setQueryData(queryKeys.market(marketId), context.previousMarket);

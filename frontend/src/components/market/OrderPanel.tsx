@@ -46,10 +46,11 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
       await buyMutation.mutateAsync({ quantity: qty });
       toast({ title: 'Success', description: `Bought ${qty} shares` });
       setQuantity('');
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
       toast({
         title: 'Error',
-        description: error.response?.data?.error || 'Failed to buy shares',
+        description: err.response?.data?.error || 'Failed to buy shares',
         variant: 'destructive',
       });
     }
@@ -69,10 +70,11 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
       await sellMutation.mutateAsync({ quantity: qty });
       toast({ title: 'Success', description: `Sold ${qty} shares` });
       setQuantity('');
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
       toast({
         title: 'Error',
-        description: error.response?.data?.error || 'Failed to sell shares',
+        description: err.response?.data?.error || 'Failed to sell shares',
         variant: 'destructive',
       });
     }
@@ -86,7 +88,7 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
         <CardTitle>Trade</CardTitle>
       </CardHeader>
       <CardContent>
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'buy' | 'sell')}>
+        <Tabs value={activeTab} onValueChange={(v: string) => setActiveTab(v as 'buy' | 'sell')}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="buy">Buy</TabsTrigger>
             <TabsTrigger value="sell">Sell</TabsTrigger>

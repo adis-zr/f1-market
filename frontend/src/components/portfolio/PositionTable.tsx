@@ -7,7 +7,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { formatPrice, formatShares, formatPnL } from '@/lib/formatters';
 import type { Position } from '@/api/types';
 
