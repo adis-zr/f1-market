@@ -72,6 +72,7 @@ def create_app_config(app: Flask) -> None:
         app.config['OTP_ALLOWED_EMAILS'] = None  # None means no allowlist (allow all)
 
 
+
 def is_mailgun_configured(app: Flask) -> bool:
     """Check if Mailgun is properly configured."""
     return bool(app.config['MAILGUN_API_KEY'] and app.config['MAILGUN_DOMAIN'])
