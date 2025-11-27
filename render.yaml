@@ -1,0 +1,55 @@
+# Render Blueprint Configuration
+# This file can be used to define your services in code
+# See: https://render.com/docs/blueprint-spec
+
+services:
+  # Backend API Service
+  - type: web
+    name: f1-market-api
+    env: python
+    region: oregon  # Change to your preferred region
+    plan: free  # or starter, standard, etc.
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true  # Render will generate a secure key
+      - key: INTERNAL_PROD_DATABASE_URL
+        fromDatabase:
+          name: f1-market-db
+          property: connectionString
+      # Optional: Uncomment and set these if you have them
+      # - key: MAILGUN_API_KEY
+      #   sync: false  # Set manually in dashboard
+      # - key: MAILGUN_DOMAIN
+      #   sync: false
+      # - key: SPORTSMONK_API_KEY
+      #   sync: false
+      # - key: OTP_ALLOWED_EMAILS
+      #   sync: false
+
+  # Frontend Static Site
+  - type: web
+    name: f1-market
+    env: static
+    region: oregon  # Change to your preferred region
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: f1-market-api
+          property: host
+
+databases:
+  # PostgreSQL Database
+  - name: f1-market-db
+    plan: free  # or starter, standard, etc.
+    region: oregon  # Change to your preferred region
+    databaseName: f1market
+    user: f1market_user
+
