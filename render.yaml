@@ -34,7 +34,6 @@ services:
   - type: web
     name: f1-market
     env: static
-    region: oregon  # Change to your preferred region
     plan: free
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: ./frontend/dist
