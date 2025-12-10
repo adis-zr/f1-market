@@ -15,6 +15,7 @@ import type {
 
 // Query key factory for cache management
 export const queryKeys = {
+  currentUser: ['currentUser'] as const,
   sports: ['sports'] as const,
   leagues: (sportId?: number) => ['leagues', sportId] as const,
   seasons: (leagueId?: number) => ['seasons', leagueId] as const,
