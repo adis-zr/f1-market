@@ -37,10 +37,7 @@ services:
     staticPublishPath: ./frontend/dist
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: f1-market-api
-          property: host
+        value: https://f1-market-api.onrender.com
 
 databases:
   # PostgreSQL Database
