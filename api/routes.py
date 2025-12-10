@@ -1,5 +1,5 @@
 """Application routes."""
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, request
 import os
 
 bp = Blueprint('main', __name__)
@@ -31,6 +31,15 @@ def debug_routing():
 
 @bp.route('/')
 def index():
-    """Serve the main application page."""
-    return render_template('index.html')
+    """API server root endpoint."""
+    return jsonify({
+        'name': 'F1 Market API',
+        'status': 'running',
+        'endpoints': {
+            'health': '/health',
+            'auth': '/auth/*',
+            'f1': '/api/f1/*',
+            'markets': '/api/markets/*'
+        }
+    })
 
