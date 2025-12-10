@@ -27,7 +27,7 @@ class WalletService:
         if wallet is None:
             wallet = Wallet(user_id=user_id, balance=Decimal('0'), locked_balance=Decimal('0'))
             db.session.add(wallet)
-            db.session.commit()
+            db.session.flush()  # Flush to get wallet.id, but don't commit yet
         return wallet
     
     @staticmethod
@@ -100,7 +100,7 @@ class WalletService:
             )
         
         wallet.locked_balance = Decimal(str(wallet.locked_balance)) + amount
-        db.session.commit()
+        db.session.flush()  # Flush changes, caller controls commit
         return True
     
     @staticmethod
@@ -127,7 +127,7 @@ class WalletService:
         else:
             wallet.locked_balance = current_locked - amount
         
-        db.session.commit()
+        db.session.flush()  # Flush changes, caller controls commit
         return True
     
     @staticmethod
@@ -170,26 +170,21 @@ class WalletService:
         db.session.add(ledger_entry)
         
         # Update wallet balance
-        # For debits (negative amount), we also need to reduce locked balance if applicable
         if amount < 0:
-            # This is a debit - reduce balance
+            # This is a debit - always deduct from total balance
             abs_amount = abs(amount)
+            wallet.balance = Decimal(str(wallet.balance)) - abs_amount
+            
+            # Also reduce locked balance if funds were reserved for this transaction
             current_locked = Decimal(str(wallet.locked_balance))
-            
-            # First reduce from locked balance if available
             if current_locked > 0:
-                reduction_from_locked = min(current_locked, abs_amount)
-                wallet.locked_balance = current_locked - reduction_from_locked
-                abs_amount -= reduction_from_locked
-            
-            # Then reduce from available balance
-            if abs_amount > 0:
-                wallet.balance = Decimal(str(wallet.balance)) - abs_amount
+                unlock_amount = min(current_locked, abs_amount)
+                wallet.locked_balance = current_locked - unlock_amount
         else:
             # This is a credit - increase balance
             wallet.balance = Decimal(str(wallet.balance)) + amount
         
-        db.session.commit()
+        db.session.flush()  # Flush changes, caller controls commit
         return ledger_entry
     
     @staticmethod

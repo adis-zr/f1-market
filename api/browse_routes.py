@@ -1,12 +1,44 @@
 """Browse API routes for sports, leagues, seasons, events, and markets."""
+from decimal import Decimal
+from typing import Dict, List
 from flask import Blueprint, request, jsonify, session
+from sqlalchemy import func
 from db import (
-    Sport, League, Season, Event, Market, Asset, Position, Wallet, LedgerEntry,
+    db, Sport, League, Season, Event, Market, Asset, Position, Wallet, LedgerEntry,
     EventResult, Participant
 )
 from sqlalchemy.orm import joinedload
+from pricing.bonding_curve import price
 
 bp = Blueprint('browse', __name__, url_prefix='/api')
+
+
+def get_supplies_batch(market_ids: List[int]) -> Dict[int, Decimal]:
+    """
+    Get current supply for multiple markets in a single query.
+    
+    Args:
+        market_ids: List of market IDs
+    
+    Returns:
+        Dict mapping market_id to supply (Decimal)
+    """
+    if not market_ids:
+        return {}
+    
+    supplies = db.session.query(
+        Position.market_id,
+        func.sum(Position.shares).label('total_supply')
+    ).filter(
+        Position.market_id.in_(market_ids)
+    ).group_by(Position.market_id).all()
+    
+    # Build dict with default of 0 for markets with no positions
+    supply_map = {market_id: Decimal('0') for market_id in market_ids}
+    for row in supplies:
+        supply_map[row.market_id] = Decimal(str(row.total_supply)) if row.total_supply else Decimal('0')
+    
+    return supply_map
 
 
 def get_current_user_id():
@@ -130,15 +162,17 @@ def get_event_markets(event_id):
             joinedload(Market.event),
         ).all()
         
-        from pricing.bonding_curve import get_current_supply, price
+        # Batch fetch supplies for all markets (single query instead of N queries)
+        market_ids = [m.id for m in markets]
+        supply_map = get_supplies_batch(market_ids)
         
         result = []
         for market in markets:
-            current_supply = get_current_supply(market.id)
+            current_supply = supply_map.get(market.id, Decimal('0'))
             current_price = price(
                 current_supply,
-                market.a,
-                market.b
+                Decimal(str(market.a)),
+                Decimal(str(market.b))
             )
             
             asset_data = None
@@ -248,15 +282,17 @@ def get_markets():
         
         markets = query.all()
         
-        from pricing.bonding_curve import get_current_supply, price
+        # Batch fetch supplies for all markets (single query instead of N queries)
+        market_ids = [m.id for m in markets]
+        supply_map = get_supplies_batch(market_ids)
         
         result = []
         for market in markets:
-            current_supply = get_current_supply(market.id)
+            current_supply = supply_map.get(market.id, Decimal('0'))
             current_price = price(
                 current_supply,
-                market.a,
-                market.b
+                Decimal(str(market.a)),
+                Decimal(str(market.b))
             )
             
             asset_data = None
@@ -324,21 +360,23 @@ def get_portfolio():
             joinedload(Position.market)
         ).all()
         
-        from pricing.bonding_curve import get_current_supply, price
+        # Batch fetch supplies for all markets (single query instead of N queries)
+        market_ids = [p.market_id for p in positions if p.market_id]
+        supply_map = get_supplies_batch(market_ids)
         
         result = []
         for position in positions:
             market = position.market
             if market:
-                current_supply = get_current_supply(market.id)
+                current_supply = supply_map.get(market.id, Decimal('0'))
                 current_price = price(
                     current_supply,
-                    market.a,
-                    market.b
+                    Decimal(str(market.a)),
+                    Decimal(str(market.b))
                 )
                 shares = float(position.shares)
                 avg_entry = float(position.avg_entry_price)
-                unrealized_pnl = (current_price - avg_entry) * shares
+                unrealized_pnl = (float(current_price) - avg_entry) * shares
             else:
                 current_price = None
                 unrealized_pnl = None

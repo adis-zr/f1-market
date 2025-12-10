@@ -63,94 +63,88 @@ class MarketService:
                 Decimal(str(market.b))
             )
             
-            # Lock balance
+            # Lock balance (uses flush, not commit - part of this transaction)
             WalletService.lock_balance(user_id, cost)
             
-            try:
-                # Get or create position
-                position = Position.query.filter_by(
-                    user_id=user_id,
-                    market_id=market_id
-                ).first()
-                
-                if position is None:
-                    # Create new position
-                    position = Position(
-                        user_id=user_id,
-                        market_id=market_id,
-                        shares=quantity,
-                        avg_entry_price=cost / quantity,
-                        realized_pnl=Decimal('0')
-                    )
-                    db.session.add(position)
-                else:
-                    # Update existing position (weighted average entry price)
-                    old_shares = Decimal(str(position.shares))
-                    old_avg_price = Decimal(str(position.avg_entry_price))
-                    new_shares = old_shares + quantity
-                    
-                    # Weighted average: (old_shares * old_avg + cost) / new_shares
-                    position.avg_entry_price = (old_shares * old_avg_price + cost) / new_shares
-                    position.shares = new_shares
-                
-                # Create ledger entry (debit)
-                WalletService.add_ledger_entry(
-                    user_id=user_id,
-                    amount=-cost,  # Negative for debit
-                    transaction_type=TransactionType.BUY,
-                    reference_type="market",
-                    reference_id=market_id,
-                    description=f"Buy {quantity} shares in market {market_id}"
-                )
-                
-                # Create trade record
-                trade = Trade(
-                    market_id=market_id,
-                    buyer_user_id=user_id,
-                    seller_user_id=None,  # AMM trade, no seller
-                    price=cost / quantity,  # Average price per share
-                    quantity=quantity,
-                    executed_at=datetime.utcnow()
-                )
-                db.session.add(trade)
-                
-                # Create price history entry
-                new_supply = current_supply + quantity
-                new_price = price(
-                    new_supply,
-                    Decimal(str(market.a)),
-                    Decimal(str(market.b))
-                )
-                price_history = PriceHistory(
-                    market_id=market_id,
-                    timestamp=datetime.utcnow(),
-                    price=new_price,
-                    reason=f"buy_{user_id}"
-                )
-                db.session.add(price_history)
-                
-                # Update market
-                market.updated_at = datetime.utcnow()
-                
-                # Commit transaction
-                db.session.commit()
-                
-                return {
-                    "success": True,
-                    "market_id": market_id,
-                    "quantity": float(quantity),
-                    "cost": float(cost),
-                    "price_per_share": float(cost / quantity),
-                    "new_supply": float(new_supply),
-                    "new_price": float(new_price),
-                    "position_shares": float(position.shares),
-                    "trade_id": trade.id
-                }
+            # Get or create position
+            position = Position.query.filter_by(
+                user_id=user_id,
+                market_id=market_id
+            ).first()
             
-            except Exception as e:
-                # Unlock balance on error
-                WalletService.unlock_balance(user_id, cost)
-                raise
+            if position is None:
+                # Create new position
+                position = Position(
+                    user_id=user_id,
+                    market_id=market_id,
+                    shares=quantity,
+                    avg_entry_price=cost / quantity,
+                    realized_pnl=Decimal('0')
+                )
+                db.session.add(position)
+            else:
+                # Update existing position (weighted average entry price)
+                old_shares = Decimal(str(position.shares))
+                old_avg_price = Decimal(str(position.avg_entry_price))
+                new_shares = old_shares + quantity
+                
+                # Weighted average: (old_shares * old_avg + cost) / new_shares
+                position.avg_entry_price = (old_shares * old_avg_price + cost) / new_shares
+                position.shares = new_shares
+            
+            # Create ledger entry (debit) - deducts balance and releases lock
+            WalletService.add_ledger_entry(
+                user_id=user_id,
+                amount=-cost,  # Negative for debit
+                transaction_type=TransactionType.BUY,
+                reference_type="market",
+                reference_id=market_id,
+                description=f"Buy {quantity} shares in market {market_id}"
+            )
+            
+            # Create trade record
+            trade = Trade(
+                market_id=market_id,
+                buyer_user_id=user_id,
+                seller_user_id=None,  # AMM trade, no seller
+                price=cost / quantity,  # Average price per share
+                quantity=quantity,
+                executed_at=datetime.utcnow()
+            )
+            db.session.add(trade)
+            
+            # Create price history entry
+            new_supply = current_supply + quantity
+            new_price = price(
+                new_supply,
+                Decimal(str(market.a)),
+                Decimal(str(market.b))
+            )
+            price_history = PriceHistory(
+                market_id=market_id,
+                timestamp=datetime.utcnow(),
+                price=new_price,
+                reason=f"buy_{user_id}"
+            )
+            db.session.add(price_history)
+            
+            # Update market
+            market.updated_at = datetime.utcnow()
+            
+            # Commit entire transaction atomically
+            db.session.commit()
+            
+            return {
+                "success": True,
+                "market_id": market_id,
+                "quantity": float(quantity),
+                "cost": float(cost),
+                "price_per_share": float(cost / quantity),
+                "new_supply": float(new_supply),
+                "new_price": float(new_price),
+                "position_shares": float(position.shares),
+                "trade_id": trade.id
+            }
         
         except IntegrityError as e:
             db.session.rollback()
