@@ -1,4 +1,4 @@
-import { usePriceHistory } from '@/hooks/usePriceHistory';
+import { usePriceHistory } from '@/hooks';
 import {
   LineChart,
   Line,

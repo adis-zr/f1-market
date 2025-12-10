@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { useToast } from '@/hooks/useToast';
+import { useToast } from '@/hooks';
 
 export function ToastContainer() {
   const { toasts } = useToast();

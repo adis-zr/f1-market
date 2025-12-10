@@ -1,4 +1,4 @@
-import { useSports } from '@/hooks/useSports';
+import { useSports } from '@/hooks';
 import { Select } from '@/components/ui/select';
 import { useState } from 'react';
 

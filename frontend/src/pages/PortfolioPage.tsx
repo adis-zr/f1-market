@@ -1,7 +1,7 @@
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PortfolioSummary } from '@/components/portfolio/PortfolioSummary';
 import { PositionTable } from '@/components/portfolio/PositionTable';
-import { usePortfolio } from '@/hooks/usePortfolio';
+import { usePortfolio } from '@/hooks';
 
 export function PortfolioPage() {
   const { positions, isLoading } = usePortfolio();

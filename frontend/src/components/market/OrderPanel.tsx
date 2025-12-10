@@ -3,13 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useMarket } from '@/hooks/useMarkets';
-import { usePosition } from '@/hooks/usePositions';
-import { useWallet } from '@/hooks/useWallet';
-import { useBuyShares } from '@/hooks/useBuyShares';
-import { useSellShares } from '@/hooks/useSellShares';
+import { useMarket, usePosition, useWallet, useBuyShares, useSellShares, useToast } from '@/hooks';
 import { formatPrice, formatShares } from '@/lib/formatters';
-import { useToast } from '@/hooks/useToast';
 
 interface OrderPanelProps {
   marketId: number;

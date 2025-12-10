@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+// Normalize URL to ensure protocol (Render's host property returns hostname without protocol)
+const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const baseURL = rawApiUrl.startsWith('http') ? rawApiUrl : `https://${rawApiUrl}`;
+
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  baseURL,
   withCredentials: true, // For session cookies
   headers: { 'Content-Type': 'application/json' },
 });

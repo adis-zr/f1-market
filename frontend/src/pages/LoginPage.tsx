@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import apiClient from '@/api/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { queryKeys } from '@/hooks/queryKeys';
+import { queryKeys } from '@/hooks';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');

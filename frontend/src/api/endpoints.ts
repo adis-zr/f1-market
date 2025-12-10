@@ -17,110 +17,53 @@ import type {
   SellSharesResponse,
 } from './types';
 
-// Auth endpoints
+// Generic fetch helpers
+const get = <T>(url: string, params?: object) =>
+  apiClient.get<T>(url, { params }).then((r) => r.data);
+
+const post = <T>(url: string, data?: object) =>
+  apiClient.post<T>(url, data).then((r) => r.data);
+
+// Auth
 export const authApi = {
-  getCurrentUser: async (): Promise<User> => {
-    const response = await apiClient.get('/auth/me');
-    return response.data;
-  },
-  logout: async (): Promise<void> => {
-    await apiClient.post('/auth/logout');
-  },
+  getCurrentUser: () => get<User>('/auth/me'),
+  logout: () => post<void>('/auth/logout'),
 };
 
-// Sports & Leagues endpoints
+// Sports & Leagues
 export const sportsApi = {
-  getSports: async (): Promise<Sport[]> => {
-    const response = await apiClient.get('/api/sports');
-    return response.data;
-  },
-  getLeagues: async (sportId?: number): Promise<League[]> => {
-    const params = sportId ? { sport_id: sportId } : {};
-    const response = await apiClient.get('/api/leagues', { params });
-    return response.data;
-  },
-  getSeasons: async (leagueId?: number): Promise<Season[]> => {
-    const params = leagueId ? { league_id: leagueId } : {};
-    const response = await apiClient.get('/api/seasons', { params });
-    return response.data;
-  },
+  getSports: () => get<Sport[]>('/api/sports'),
+  getLeagues: (sportId?: number) => get<League[]>('/api/leagues', sportId ? { sport_id: sportId } : {}),
+  getSeasons: (leagueId?: number) => get<Season[]>('/api/seasons', leagueId ? { league_id: leagueId } : {}),
 };
 
-// Events endpoints
+// Events
 export const eventsApi = {
-  getEvents: async (filters?: {
-    sport_id?: number;
-    season_id?: number;
-    status?: string;
-  }): Promise<Event[]> => {
-    const response = await apiClient.get('/api/events', { params: filters });
-    return response.data;
-  },
-  getEvent: async (eventId: number): Promise<Event> => {
-    const response = await apiClient.get(`/api/events/${eventId}`);
-    return response.data;
-  },
-  getEventMarkets: async (eventId: number): Promise<Market[]> => {
-    const response = await apiClient.get(`/api/events/${eventId}/markets`);
-    return response.data;
-  },
-  getEventResults: async (eventId: number): Promise<EventResult[]> => {
-    const response = await apiClient.get(`/api/events/${eventId}/results`);
-    return response.data;
-  },
+  getEvents: (filters?: { sport_id?: number; season_id?: number; status?: string }) =>
+    get<Event[]>('/api/events', filters),
+  getEvent: (eventId: number) => get<Event>(`/api/events/${eventId}`),
+  getEventMarkets: (eventId: number) => get<Market[]>(`/api/events/${eventId}/markets`),
+  getEventResults: (eventId: number) => get<EventResult[]>(`/api/events/${eventId}/results`),
 };
 
-// Markets endpoints
+// Markets
 export const marketsApi = {
-  getMarkets: async (filters?: {
-    event_id?: number;
-    sport_id?: number;
-    status?: string;
-  }): Promise<Market[]> => {
-    const response = await apiClient.get('/api/markets', { params: filters });
-    return response.data;
-  },
-  getMarket: async (marketId: number): Promise<Market> => {
-    const response = await apiClient.get(`/api/markets/${marketId}`);
-    return response.data;
-  },
-  getPriceHistory: async (marketId: number, limit = 100): Promise<PriceHistory> => {
-    const response = await apiClient.get(`/api/markets/${marketId}/price-history`, {
-      params: { limit },
-    });
-    return response.data;
-  },
-  getPosition: async (marketId: number): Promise<Position> => {
-    const response = await apiClient.get(`/api/markets/${marketId}/positions`);
-    return response.data;
-  },
-  buyShares: async (marketId: number, data: BuySharesRequest): Promise<BuySharesResponse> => {
-    const response = await apiClient.post(`/api/markets/${marketId}/buy`, data);
-    return response.data;
-  },
-  sellShares: async (marketId: number, data: SellSharesRequest): Promise<SellSharesResponse> => {
-    const response = await apiClient.post(`/api/markets/${marketId}/sell`, data);
-    return response.data;
-  },
-  getWallet: async (marketId: number): Promise<Wallet> => {
-    const response = await apiClient.get(`/api/markets/${marketId}/wallet`);
-    return response.data;
-  },
+  getMarkets: (filters?: { event_id?: number; sport_id?: number; status?: string }) =>
+    get<Market[]>('/api/markets', filters),
+  getMarket: (marketId: number) => get<Market>(`/api/markets/${marketId}`),
+  getPriceHistory: (marketId: number, limit = 100) =>
+    get<PriceHistory>(`/api/markets/${marketId}/price-history`, { limit }),
+  getPosition: (marketId: number) => get<Position>(`/api/markets/${marketId}/positions`),
+  getWallet: (marketId: number) => get<Wallet>(`/api/markets/${marketId}/wallet`),
+  buyShares: (marketId: number, data: BuySharesRequest) =>
+    post<BuySharesResponse>(`/api/markets/${marketId}/buy`, data),
+  sellShares: (marketId: number, data: SellSharesRequest) =>
+    post<SellSharesResponse>(`/api/markets/${marketId}/sell`, data),
 };
 
-// Portfolio & Wallet endpoints
+// Portfolio & Wallet
 export const portfolioApi = {
-  getPortfolio: async (): Promise<Position[]> => {
-    const response = await apiClient.get('/api/portfolio');
-    return response.data;
-  },
-  getWallet: async (): Promise<Wallet> => {
-    const response = await apiClient.get('/api/wallet');
-    return response.data;
-  },
-  getLedger: async (params?: { limit?: number; type?: string }): Promise<LedgerEntry[]> => {
-    const response = await apiClient.get('/api/wallet/ledger', { params });
-    return response.data;
-  },
+  getPortfolio: () => get<Position[]>('/api/portfolio'),
+  getWallet: () => get<Wallet>('/api/wallet'),
+  getLedger: (params?: { limit?: number; type?: string }) => get<LedgerEntry[]>('/api/wallet/ledger', params),
 };
-

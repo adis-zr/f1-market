@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useCurrentUser } from '@/hooks';
 import { Button } from '@/components/ui/button';
 import { authApi } from '@/api/endpoints';
 import { useNavigate } from 'react-router-dom';

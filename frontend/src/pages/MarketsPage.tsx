@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { SportSelector } from '@/components/layout/SportSelector';
 import { MarketTable } from '@/components/market/MarketTable';
-import { useMarkets } from '@/hooks/useMarkets';
+import { useMarkets } from '@/hooks';
 import { Select } from '@/components/ui/select';
 
 export function MarketsPage() {

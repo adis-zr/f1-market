@@ -1,7 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatPrice, formatPnL } from '@/lib/formatters';
-import { usePortfolio } from '@/hooks/usePortfolio';
-import { useWallet } from '@/hooks/useWallet';
+import { usePortfolio, useWallet } from '@/hooks';
 
 export function PortfolioSummary() {
   const { portfolioValue, totalPnL } = usePortfolio();

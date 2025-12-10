@@ -28,8 +28,6 @@ services:
         sync: false
       - key: OTP_ALLOWED_EMAILS
         sync: false
-      - key: APPLICATION_ROOT
-        value: /f1-market-api  # Set this if your app is served behind a reverse proxy at a subpath
 
   # Frontend Static Site
   - type: web

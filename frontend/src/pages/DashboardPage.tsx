@@ -2,7 +2,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { WalletSummaryCard } from '@/components/wallet/WalletSummaryCard';
 import { PortfolioSummary } from '@/components/portfolio/PortfolioSummary';
 import { MarketCard } from '@/components/market/MarketCard';
-import { useMarkets } from '@/hooks/useMarkets';
+import { useMarkets } from '@/hooks';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function DashboardPage() {

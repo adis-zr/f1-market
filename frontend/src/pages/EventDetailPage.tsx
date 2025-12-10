@@ -1,8 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { MarketTable } from '@/components/market/MarketTable';
-import { useEvent, useEventMarkets } from '@/hooks/useEvents';
-import { useEventResults } from '@/hooks/useEventResults';
+import { useEvent, useEventMarkets, useEventResults } from '@/hooks';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/formatters';

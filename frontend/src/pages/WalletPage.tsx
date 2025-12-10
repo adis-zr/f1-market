@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { WalletSummaryCard } from '@/components/wallet/WalletSummaryCard';
 import { LedgerTable } from '@/components/wallet/LedgerTable';
-import { useLedger } from '@/hooks/useWallet';
+import { useLedger } from '@/hooks';
 import { Select } from '@/components/ui/select';
 
 export function WalletPage() {

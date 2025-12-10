@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { SportSelector } from '@/components/layout/SportSelector';
 import { EventTable } from '@/components/event/EventTable';
-import { useEvents } from '@/hooks/useEvents';
+import { useEvents } from '@/hooks';
 import { Select } from '@/components/ui/select';
 
 export function EventsPage() {

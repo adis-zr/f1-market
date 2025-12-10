@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatPrice } from '@/lib/formatters';
-import { useWallet } from '@/hooks/useWallet';
+import { useWallet } from '@/hooks';
 
 export function WalletSummaryCard() {
   const { data: wallet, isLoading } = useWallet();
