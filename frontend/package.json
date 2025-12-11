@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.17",
@@ -16,6 +17,8 @@
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "compression": "^1.7.4",
+    "express": "^4.21.2",
     "lucide-react": "^0.555.0",
     "postcss": "^8.5.6",
     "react": "^19.2.0",

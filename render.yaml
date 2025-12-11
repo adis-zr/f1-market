@@ -29,12 +29,14 @@ services:
       - key: OTP_ALLOWED_EMAILS
         sync: false
 
-  # Frontend Static Site
+  # Frontend Web Service
   - type: web
     name: f1-market
-    env: static
+    env: node
+    region: oregon
+    plan: free
     buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: ./frontend/dist
+    startCommand: cd frontend && npm start
     envVars:
       - key: VITE_API_URL
         value: https://f1-market-api.onrender.com
