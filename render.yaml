@@ -29,9 +29,9 @@ services:
       - key: OTP_ALLOWED_EMAILS
         sync: false
 
-  # Frontend Web Service
+  # Frontend Web Service (Node.js)
   - type: web
-    name: f1-market
+    name: f1-market-frontend
     env: node
     region: oregon
     plan: free
