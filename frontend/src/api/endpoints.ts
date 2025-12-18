@@ -46,6 +46,25 @@ export const eventsApi = {
   getEventResults: (eventId: number) => get<EventResult[]>(`/api/events/${eventId}/results`),
 };
 
+// Estimate response types
+export interface EstimateBuyResponse {
+  side: 'buy';
+  quantity: number;
+  estimated_cost: number;
+  price_per_share: number;
+  current_supply: number;
+}
+
+export interface EstimateSellResponse {
+  side: 'sell';
+  quantity: number;
+  estimated_payout: number;
+  price_per_share: number;
+  current_supply: number;
+}
+
+export type EstimateResponse = EstimateBuyResponse | EstimateSellResponse;
+
 // Markets
 export const marketsApi = {
   getMarkets: (filters?: { event_id?: number; sport_id?: number; status?: string }) =>
@@ -59,6 +78,8 @@ export const marketsApi = {
     post<BuySharesResponse>(`/api/markets/${marketId}/buy`, data),
   sellShares: (marketId: number, data: SellSharesRequest) =>
     post<SellSharesResponse>(`/api/markets/${marketId}/sell`, data),
+  estimateCost: (marketId: number, quantity: number, side: 'buy' | 'sell') =>
+    post<EstimateResponse>(`/api/markets/${marketId}/estimate`, { quantity, side }),
 };
 
 // Portfolio & Wallet

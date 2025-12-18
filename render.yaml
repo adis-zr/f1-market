@@ -28,6 +28,8 @@ services:
         sync: false
       - key: OTP_ALLOWED_EMAILS
         sync: false
+      - key: CORS_ORIGINS
+        value: https://f1-market-frontend.onrender.com
 
   # Frontend Web Service (Node.js)
   - type: web

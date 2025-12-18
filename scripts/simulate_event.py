@@ -1,7 +1,7 @@
 """CLI tool to simulate event settlement."""
 import sys
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 from app import app
 from db import db, Event, EventResult, Participant, ResultStatus
 from services.settlement_service import SettlementService
@@ -16,7 +16,7 @@ def simulate_event(event_id: int):
     """
     with app.app_context():
         # Get event
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         if not event:
             print(f"Error: Event {event_id} not found")
             return
@@ -44,7 +44,7 @@ def simulate_event(event_id: int):
             if participant_id in participants_processed:
                 continue
             
-            participant = Participant.query.get(participant_id)
+            participant = db.session.get(Participant, participant_id)
             if not participant:
                 continue
             
@@ -72,7 +72,7 @@ def simulate_event(event_id: int):
                 status=ResultStatus.FINISHED,
                 metrics_json={
                     'simulated': True,
-                    'simulated_at': datetime.utcnow().isoformat()
+                    'simulated_at': datetime.now(timezone.utc).isoformat()
                 }
             )
             db.session.add(event_result)

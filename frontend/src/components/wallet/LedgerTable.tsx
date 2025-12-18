@@ -14,7 +14,9 @@ interface LedgerTableProps {
   entries: LedgerEntry[];
 }
 
-const transactionTypeColors: Record<LedgerEntry['transaction_type'], string> = {
+type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning';
+
+const transactionTypeColors: Record<LedgerEntry['transaction_type'], BadgeVariant> = {
   deposit: 'success',
   withdrawal: 'destructive',
   buy: 'default',
@@ -53,7 +55,7 @@ export function LedgerTable({ entries }: LedgerTableProps) {
             <TableRow key={entry.id}>
               <TableCell>{formatDateTime(entry.created_at)}</TableCell>
               <TableCell>
-                <Badge variant={variant as any}>{entry.transaction_type}</Badge>
+                <Badge variant={variant}>{entry.transaction_type}</Badge>
               </TableCell>
               <TableCell>
                 <span

@@ -1,16 +1,34 @@
 """Authentication routes and logic."""
 import re
-import random
+import secrets
 import requests
 import logging
 from flask import Blueprint, request, jsonify, session, current_app
-from db import db, User, UserRole, OTP
+from flask_wtf.csrf import generate_csrf
+from db import db, utc_now, User, UserRole, OTP
 from config import is_mailgun_configured, is_email_allowed
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
+# OTP configuration constants
+OTP_EXPIRY_MINUTES = 10
+OTP_CODE_LENGTH = 6
+
 bp = Blueprint('auth', __name__)
+
+# Store limiter reference for applying rate limits
+_limiter = None
+
+
+def apply_rate_limits(limiter):
+    """Apply rate limits to auth endpoints. Called from app.py after limiter initialization."""
+    global _limiter
+    _limiter = limiter
+
+    # Apply rate limits to specific endpoints
+    limiter.limit("5 per hour")(request_otp)
+    limiter.limit("10 per hour")(verify_otp)
 
 
 def is_valid_email(email: str) -> bool:
@@ -20,14 +38,14 @@ def is_valid_email(email: str) -> bool:
 
 
 def generate_otp() -> str:
-    """Generate a 6-digit OTP."""
-    return str(random.randint(100000, 999999))
+    """Generate a cryptographically secure OTP."""
+    return ''.join(secrets.choice('0123456789') for _ in range(OTP_CODE_LENGTH))
 
 
 def send_otp_email(email: str, otp_code: str, mailgun_configured: bool) -> bool:
     """Send OTP via Mailgun."""
     if not mailgun_configured:
-        logger.warning(f"Mailgun not configured - would send OTP {otp_code} to {email}")
+        logger.warning(f"Mailgun not configured - OTP for {email}: {otp_code}")
         return False
 
     try:
@@ -49,7 +67,7 @@ def send_otp_email(email: str, otp_code: str, mailgun_configured: bool) -> bool:
         subject = "Your F1 Market Login Code"
         text = f"""Your one-time password (OTP) for F1 Market is: {otp_code}
 
-This code will expire in 10 minutes.
+This code will expire in {OTP_EXPIRY_MINUTES} minutes.
 
 If you didn't request this code, please ignore this email."""
 
@@ -105,10 +123,8 @@ def request_otp():
         if not is_email_allowed(current_app, email):
             return jsonify({'message': 'Email not authorized to request OTP'}), 403
 
-        # Clean up expired OTPs
-        expired_otps = OTP.query.filter(OTP.expires_at < datetime.utcnow()).all()
-        for otp in expired_otps:
-            db.session.delete(otp)
+        # Clean up expired OTPs (bulk delete for efficiency)
+        OTP.query.filter(OTP.expires_at < utc_now()).delete()
 
         # Invalidate any existing unused OTPs for this email
         existing_otps = OTP.query.filter_by(email=email, used=False).all()
@@ -117,7 +133,7 @@ def request_otp():
 
         # Generate new OTP
         otp_code = generate_otp()
-        expires_at = datetime.utcnow() + timedelta(minutes=10)
+        expires_at = utc_now() + timedelta(minutes=OTP_EXPIRY_MINUTES)
 
         new_otp = OTP(
             email=email,
@@ -144,7 +160,7 @@ def request_otp():
         if email_sent:
             logger.info(f"OTP successfully sent to {email}")
         else:
-            logger.warning(f"OTP generated but not sent (Mailgun not configured) - OTP: {otp_code}")
+            logger.warning(f"OTP generated for {email} but not sent (Mailgun not configured)")
 
         return jsonify({
             'message': 'OTP sent to your email' if email_sent else 'OTP generated (check console for debug)',
@@ -153,7 +169,7 @@ def request_otp():
 
     except Exception as e:
         db.session.rollback()
-        print(f"Error in request_otp: {e}")
+        logger.error(f"Error in request_otp: {e}", exc_info=True)
         return jsonify({'message': 'Server error occurred'}), 500
 
 
@@ -199,7 +215,12 @@ def verify_otp():
 
         db.session.commit()
 
-        # Create session
+        # Regenerate session to prevent session fixation attacks
+        # Clear old session data and create fresh session with new ID
+        session.clear()
+        session.modified = True
+
+        # Create new session with user data
         session['user_id'] = user.id
         session['email'] = user.email
         session['username'] = user.username
@@ -214,7 +235,7 @@ def verify_otp():
 
     except Exception as e:
         db.session.rollback()
-        print(f"Error in verify_otp: {e}")
+        logger.error(f"Error in verify_otp: {e}", exc_info=True)
         return jsonify({'message': 'Server error occurred'}), 500
 
 
@@ -222,7 +243,7 @@ def verify_otp():
 def get_current_user():
     """Get the current logged-in user from session."""
     if 'user_id' in session:
-        user = User.query.get(session['user_id'])
+        user = db.session.get(User, session['user_id'])
         if user:
             return jsonify({
                 'email': user.email,
@@ -239,4 +260,10 @@ def logout():
     """Logout the current user by clearing the session."""
     session.clear()
     return jsonify({'message': 'Logged out successfully'}), 200
+
+
+@bp.route('/csrf-token', methods=['GET'])
+def get_csrf_token():
+    """Return a CSRF token for the frontend to use in subsequent requests."""
+    return jsonify({'csrf_token': generate_csrf()}), 200
 

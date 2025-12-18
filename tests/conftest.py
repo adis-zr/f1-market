@@ -1,13 +1,13 @@
 """Pytest configuration and fixtures."""
 import pytest
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from flask import Flask
 from db import db
 from db.models import (
     User, UserRole, Sport, League, Season, Event, Participant, Asset, Market,
     ScoringRule, Wallet, SeasonStatus, EventStatus, MarketStatus, AssetType,
-    FormulaType
+    FormulaType, OTP, EventResult, ResultStatus
 )
 from config import create_app_config
 
@@ -20,9 +20,16 @@ def app():
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SECRET_KEY'] = 'test-secret-key'
-    
+    app.config['WTF_CSRF_ENABLED'] = False
+    # Mailgun config (not actually used in tests)
+    app.config['MAILGUN_API_KEY'] = None
+    app.config['MAILGUN_DOMAIN'] = None
+    app.config['MAILGUN_FROM_EMAIL'] = None
+    # Email allowlist (None means allow all)
+    app.config['OTP_ALLOWED_EMAILS'] = None
+
     db.init_app(app)
-    
+
     with app.app_context():
         db.create_all()
         yield app
@@ -100,7 +107,7 @@ def test_event(db_session, test_season):
         season_id=test_season.id,
         name='Test Grand Prix',
         venue='Test Circuit',
-        start_at=datetime.utcnow(),
+        start_at=datetime.now(timezone.utc),
         status=EventStatus.UPCOMING
     )
     db_session.add(event)
@@ -184,4 +191,110 @@ def test_wallet(db_session, test_user):
         description='Test deposit'
     )
     return wallet
+
+
+@pytest.fixture
+def client(app):
+    """Flask test client."""
+    return app.test_client()
+
+
+@pytest.fixture
+def full_app(app):
+    """App with all blueprints registered for route testing."""
+    from api import bp as main_bp
+    from api.market_routes import bp as market_bp
+    from api.browse_routes import bp as browse_bp
+    from api.settlement_routes import bp as settlement_bp
+    from auth.routes import bp as auth_bp
+
+    # Only register if not already registered
+    if 'main' not in app.blueprints:
+        app.register_blueprint(main_bp)
+    if 'market' not in app.blueprints:
+        app.register_blueprint(market_bp)
+    if 'browse' not in app.blueprints:
+        app.register_blueprint(browse_bp)
+    if 'settlement' not in app.blueprints:
+        app.register_blueprint(settlement_bp)
+    if 'auth' not in app.blueprints:
+        app.register_blueprint(auth_bp, url_prefix='/auth')
+
+    # Configure app for testing with CSRF disabled
+    app.config['WTF_CSRF_ENABLED'] = False
+
+    return app
+
+
+@pytest.fixture
+def full_client(full_app):
+    """Flask test client with all blueprints."""
+    return full_app.test_client()
+
+
+@pytest.fixture
+def authenticated_client(full_app, test_user):
+    """Client with authenticated session."""
+    client = full_app.test_client()
+    with client.session_transaction() as sess:
+        sess['user_id'] = test_user.id
+        sess['email'] = test_user.email
+        sess['username'] = test_user.username
+        sess['role'] = test_user.role
+    return client
+
+
+@pytest.fixture
+def admin_client(full_app, test_admin):
+    """Client with admin session."""
+    client = full_app.test_client()
+    with client.session_transaction() as sess:
+        sess['user_id'] = test_admin.id
+        sess['email'] = test_admin.email
+        sess['username'] = test_admin.username
+        sess['role'] = test_admin.role
+    return client
+
+
+@pytest.fixture
+def test_otp(db_session):
+    """Create a valid OTP for testing.
+
+    Uses naive datetime for SQLite compatibility - SQLite doesn't store
+    timezone info, so we use naive datetimes to match what the database returns.
+    """
+    otp = OTP(
+        email='test@example.com',
+        expires_at=datetime.utcnow() + timedelta(minutes=10),
+        used=False
+    )
+    otp.set_code('123456')
+    db_session.add(otp)
+    db_session.commit()
+    return otp, '123456'  # Return both OTP record and plain code
+
+
+@pytest.fixture
+def test_event_result(db_session, test_event, test_participant):
+    """Create a test event result."""
+    result = EventResult(
+        event_id=test_event.id,
+        participant_id=test_participant.id,
+        primary_score=Decimal('25'),
+        rank=1,
+        status=ResultStatus.FINISHED
+    )
+    db_session.add(result)
+    db_session.commit()
+    return result
+
+
+@pytest.fixture
+def test_position(db_session, test_user, test_market, test_wallet):
+    """Create a test position by buying shares."""
+    from services.market_service import MarketService
+    MarketService.buy_shares(test_user.id, test_market.id, Decimal('10.0'))
+    from db.models import Position
+    position = Position.query.filter_by(user_id=test_user.id, market_id=test_market.id).first()
+    return position
 

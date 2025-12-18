@@ -1,6 +1,7 @@
 """Wallet and ledger service for managing user balances."""
 from decimal import Decimal
 from typing import Optional
+from sqlalchemy.exc import IntegrityError
 from db import db, Wallet, LedgerEntry, User, TransactionType
 
 
@@ -13,21 +14,39 @@ class WalletService:
     """Service for managing wallets and ledger entries."""
     
     @staticmethod
-    def get_or_create_wallet(user_id: int) -> Wallet:
+    def get_or_create_wallet(user_id: int, for_update: bool = False) -> Wallet:
         """
         Get or create a wallet for a user.
-        
+
         Args:
             user_id: User ID
-        
+            for_update: If True, acquire a row-level lock (FOR UPDATE) to prevent
+                        race conditions during concurrent balance modifications
+
         Returns:
             Wallet instance
         """
-        wallet = Wallet.query.filter_by(user_id=user_id).first()
+        query = Wallet.query.filter_by(user_id=user_id)
+        if for_update:
+            query = query.with_for_update()
+        wallet = query.first()
+
         if wallet is None:
-            wallet = Wallet(user_id=user_id, balance=Decimal('0'), locked_balance=Decimal('0'))
-            db.session.add(wallet)
-            db.session.flush()  # Flush to get wallet.id, but don't commit yet
+            try:
+                # Use nested transaction (savepoint) to avoid rolling back the entire transaction
+                with db.session.begin_nested():
+                    wallet = Wallet(user_id=user_id, balance=Decimal('0'), locked_balance=Decimal('0'))
+                    db.session.add(wallet)
+                    db.session.flush()  # Flush to get wallet.id
+            except IntegrityError:
+                # Another concurrent request created the wallet - only the savepoint is rolled back
+                query = Wallet.query.filter_by(user_id=user_id)
+                if for_update:
+                    query = query.with_for_update()
+                wallet = query.first()
+                if wallet is None:
+                    raise ValueError(f"Failed to get or create wallet for user {user_id}")
+
         return wallet
     
     @staticmethod
@@ -77,28 +96,33 @@ class WalletService:
     def lock_balance(user_id: int, amount: Decimal) -> bool:
         """
         Lock tokens for a pending transaction.
-        
+
+        Uses row-level locking (SELECT FOR UPDATE) to prevent race conditions
+        where concurrent requests could both pass the balance check before
+        either locks the funds.
+
         Args:
             user_id: User ID
             amount: Amount to lock
-        
+
         Returns:
             True if successful
-        
+
         Raises:
             InsufficientBalanceError: If user doesn't have enough balance
         """
         if amount <= 0:
             raise ValueError("Amount must be positive")
-        
-        wallet = WalletService.get_or_create_wallet(user_id)
+
+        # Use FOR UPDATE to acquire row-level lock, preventing concurrent modifications
+        wallet = WalletService.get_or_create_wallet(user_id, for_update=True)
         available = Decimal(str(wallet.balance)) - Decimal(str(wallet.locked_balance))
-        
+
         if available < amount:
             raise InsufficientBalanceError(
                 f"Insufficient balance. Available: {available}, Required: {amount}"
             )
-        
+
         wallet.locked_balance = Decimal(str(wallet.locked_balance)) + amount
         db.session.flush()  # Flush changes, caller controls commit
         return True
@@ -107,18 +131,22 @@ class WalletService:
     def unlock_balance(user_id: int, amount: Decimal) -> bool:
         """
         Unlock tokens after a transaction is completed or cancelled.
-        
+
+        Uses row-level locking (SELECT FOR UPDATE) to prevent race conditions
+        where concurrent unlock requests could both read the same locked_balance
+        before either updates it.
+
         Args:
             user_id: User ID
             amount: Amount to unlock
-        
+
         Returns:
             True if successful
         """
         if amount <= 0:
             raise ValueError("Amount must be positive")
-        
-        wallet = WalletService.get_or_create_wallet(user_id)
+
+        wallet = WalletService.get_or_create_wallet(user_id, for_update=True)
         current_locked = Decimal(str(wallet.locked_balance))
         
         if current_locked < amount:
@@ -155,8 +183,9 @@ class WalletService:
         Returns:
             Created LedgerEntry instance
         """
-        wallet = WalletService.get_or_create_wallet(user_id)
-        
+        # Use FOR UPDATE to acquire row-level lock, preventing concurrent balance modifications
+        wallet = WalletService.get_or_create_wallet(user_id, for_update=True)
+
         # Create ledger entry
         ledger_entry = LedgerEntry(
             user_id=user_id,
@@ -171,9 +200,14 @@ class WalletService:
         
         # Update wallet balance
         if amount < 0:
-            # This is a debit - always deduct from total balance
+            # This is a debit - validate sufficient balance before deducting
             abs_amount = abs(amount)
-            wallet.balance = Decimal(str(wallet.balance)) - abs_amount
+            current_balance = Decimal(str(wallet.balance))
+            if current_balance < abs_amount:
+                raise InsufficientBalanceError(
+                    f"Cannot debit {abs_amount}: balance is {current_balance}"
+                )
+            wallet.balance = current_balance - abs_amount
             
             # Also reduce locked balance if funds were reserved for this transaction
             current_locked = Decimal(str(wallet.locked_balance))

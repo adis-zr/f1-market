@@ -1,5 +1,25 @@
 // Core entities matching backend models
 
+// API Error Response
+export interface ApiError {
+  error?: string;
+  message?: string;
+}
+
+// Type guard to safely check if an error is an ApiError
+export function isApiError(error: unknown): error is { response: { data: ApiError } } {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'response' in error &&
+    typeof (error as { response?: unknown }).response === 'object' &&
+    (error as { response?: unknown }).response !== null &&
+    'data' in (error as { response: { data?: unknown } }).response &&
+    typeof (error as { response: { data?: unknown } }).response.data === 'object' &&
+    (error as { response: { data?: unknown } }).response.data !== null
+  );
+}
+
 export interface Sport {
   id: number;
   code: string;
@@ -24,7 +44,7 @@ export interface Participant {
   sport_id: number;
   name: string;
   short_code: string | null;
-  metadata_json: Record<string, any> | null;
+  metadata_json: Record<string, unknown> | null;
 }
 
 export interface Team {
@@ -32,7 +52,7 @@ export interface Team {
   sport_id: number;
   name: string;
   short_code: string | null;
-  metadata_json: Record<string, any> | null;
+  metadata_json: Record<string, unknown> | null;
 }
 
 export interface Event {
@@ -43,7 +63,7 @@ export interface Event {
   start_at: string | null;
   end_at: string | null;
   status: 'upcoming' | 'live' | 'finished';
-  metadata: Record<string, any> | null;
+  metadata: Record<string, unknown> | null;
 }
 
 export interface Asset {

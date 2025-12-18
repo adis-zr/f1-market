@@ -1,5 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AppLayout } from './components/layout/AppLayout';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { MarketsPage } from './pages/MarketsPage';
@@ -9,23 +11,48 @@ import { EventDetailPage } from './pages/EventDetailPage';
 import { PortfolioPage } from './pages/PortfolioPage';
 import { WalletPage } from './pages/WalletPage';
 import { ToastContainer } from './components/ui/toast';
+import { onUnauthorized } from './api/client';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+// Component to handle auth redirects
+function AuthRedirectHandler() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const unsubscribe = onUnauthorized(() => {
+      // Only redirect if not already on login page
+      if (window.location.pathname !== '/login') {
+        navigate('/login', { replace: true });
+      }
+    });
+    return unsubscribe;
+  }, [navigate]);
+
+  return null;
+}
 
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="markets" element={<MarketsPage />} />
-          <Route path="markets/:marketId" element={<MarketDetailPage />} />
-          <Route path="events" element={<EventsPage />} />
-          <Route path="events/:eventId" element={<EventDetailPage />} />
-          <Route path="portfolio" element={<PortfolioPage />} />
-          <Route path="wallet" element={<WalletPage />} />
-        </Route>
-      </Routes>
+      <AuthRedirectHandler />
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          {/* Protected routes - require authentication */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/" element={<AppLayout />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="markets" element={<MarketsPage />} />
+              <Route path="markets/:marketId" element={<MarketDetailPage />} />
+              <Route path="events" element={<EventsPage />} />
+              <Route path="events/:eventId" element={<EventDetailPage />} />
+              <Route path="portfolio" element={<PortfolioPage />} />
+              <Route path="wallet" element={<WalletPage />} />
+            </Route>
+          </Route>
+        </Routes>
+      </ErrorBoundary>
       <ToastContainer />
     </BrowserRouter>
   );

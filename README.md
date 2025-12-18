@@ -335,7 +335,7 @@ npm run build
 This project includes a `render.yaml` blueprint for one-click deployment to [Render](https://render.com):
 
 - **f1-market-api** — Python web service (Gunicorn)
-- **f1-market** — Static site (React build)
+- **f1-market-frontend** — Node.js web service (Express + React SPA)
 - **f1-market-db** — Managed PostgreSQL
 
 Required environment variables in production:

@@ -19,6 +19,7 @@ export {
   useWallet,
   useLedger,
   usePortfolio,
+  useEstimateCost,
 } from './useData';
 
 // Trading mutations

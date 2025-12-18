@@ -1,8 +1,12 @@
 """Main Flask application."""
 import os
 import logging
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_migrate import Migrate
 from db import db
 from config import create_app_config
 from api import bp as main_bp
@@ -25,20 +29,43 @@ logger = logging.getLogger(__name__)
 create_app_config(app)
 
 # CORS configuration - allow credentials for session cookies
-# In development, allow all origins. In production, you can restrict to specific domains.
-# Set CORS_ORIGINS env var (comma-separated) to restrict origins in production
+# Set CORS_ORIGINS env var (comma-separated) to restrict origins
+# In production, CORS_ORIGINS is required for security
 cors_origins = os.environ.get('CORS_ORIGINS')
+flask_env = os.environ.get('FLASK_ENV', 'development').lower()
+
 if cors_origins:
     CORS(app, supports_credentials=True, origins=[origin.strip() for origin in cors_origins.split(',')])
+elif flask_env == 'production':
+    raise RuntimeError("CORS_ORIGINS must be set in production for security")
 else:
-    CORS(app, supports_credentials=True)  # Allow all origins (development default)
+    CORS(app, supports_credentials=True)  # Allow all origins in development only
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    storage_uri="memory://",
+    default_limits=[],  # No default limits; apply per-route
+)
+
+# Custom error handler for rate limit exceeded
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded errors."""
+    return jsonify({
+        'message': 'Rate limit exceeded. Please try again later.',
+        'error': 'rate_limit_exceeded'
+    }), 429
 
 # Initialize database
 db.init_app(app)
 
-# Create tables (fine for early dev; later you'll likely move to migrations)
-with app.app_context():
-    db.create_all()
+# Initialize Flask-Migrate
+migrate = Migrate(app, db)
 
 # Register routes
 app.register_blueprint(main_bp)
@@ -47,6 +74,17 @@ app.register_blueprint(f1_bp)
 app.register_blueprint(market_bp)
 app.register_blueprint(settlement_bp)
 app.register_blueprint(browse_bp)
+
+# Import auth routes to apply rate limiting
+from auth.routes import apply_rate_limits
+apply_rate_limits(limiter)
+
+
+@app.route('/health')
+def health():
+    """Health check endpoint for deployment monitoring."""
+    return jsonify({'status': 'healthy'}), 200
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -1,19 +1,12 @@
 """F1 API routes for standings and telemetry."""
-from flask import Blueprint, jsonify, session, request, current_app
-from f1 import F1Service
-from functools import wraps
+import logging
+from flask import Blueprint, jsonify, request, current_app
+from sports.f1 import F1Service
+from auth.helpers import require_auth
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('f1', __name__, url_prefix='/api/f1')
-
-
-def require_auth(f):
-    """Decorator to require authentication for F1 routes."""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return jsonify({'message': 'Authentication required'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 def get_f1_service() -> F1Service:
@@ -47,7 +40,7 @@ def get_standings():
         }), 200
         
     except Exception as e:
-        print(f"Error in get_standings: {e}")
+        logger.error(f"Error in get_standings: {e}", exc_info=True)
         return jsonify({'message': 'Server error occurred'}), 500
 
 
@@ -72,7 +65,7 @@ def get_race_status():
         return jsonify(response_data), 200
         
     except Exception as e:
-        print(f"Error in get_race_status: {e}")
+        logger.error(f"Error in get_race_status: {e}", exc_info=True)
         return jsonify({'message': 'Server error occurred'}), 500
 
 
@@ -102,7 +95,7 @@ def get_telemetry():
         return jsonify(telemetry), 200
         
     except Exception as e:
-        print(f"Error in get_telemetry: {e}")
+        logger.error(f"Error in get_telemetry: {e}", exc_info=True)
         return jsonify({'message': 'Server error occurred'}), 500
 
 
@@ -128,6 +121,6 @@ def get_last_race():
         }), 200
         
     except Exception as e:
-        print(f"Error in get_last_race: {e}")
+        logger.error(f"Error in get_last_race: {e}", exc_info=True)
         return jsonify({'message': 'Server error occurred'}), 500
 

@@ -1,8 +1,7 @@
 """Market service for buying and selling shares."""
 from decimal import Decimal
-from datetime import datetime
 from typing import Dict, Optional
-from db import db, Market, Position, Trade, PriceHistory, MarketStatus, TransactionType
+from db import db, utc_now, Market, Position, Trade, PriceHistory, MarketStatus, TransactionType
 from pricing.bonding_curve import buy_cost, sell_payout, get_current_supply, price
 from services.wallet_service import WalletService, InsufficientBalanceError
 from sqlalchemy.exc import IntegrityError
@@ -43,18 +42,18 @@ class MarketService:
         
         # Start transaction
         try:
-            # Get market
-            market = Market.query.get(market_id)
+            # Get market with row-level lock to prevent race conditions
+            market = Market.query.filter_by(id=market_id).with_for_update().first()
             if not market:
                 raise ValueError(f"Market {market_id} not found")
-            
+
             # Check market status
             if market.status != MarketStatus.OPEN:
                 raise MarketClosedError(f"Market {market_id} is not open (status: {market.status.value})")
-            
+
             # Get current supply
             current_supply = get_current_supply(market_id)
-            
+
             # Compute cost
             cost = buy_cost(
                 current_supply,
@@ -66,11 +65,11 @@ class MarketService:
             # Lock balance (uses flush, not commit - part of this transaction)
             WalletService.lock_balance(user_id, cost)
             
-            # Get or create position
+            # Get or create position with row-level lock to prevent race conditions
             position = Position.query.filter_by(
                 user_id=user_id,
                 market_id=market_id
-            ).first()
+            ).with_for_update().first()
             
             if position is None:
                 # Create new position
@@ -109,7 +108,7 @@ class MarketService:
                 seller_user_id=None,  # AMM trade, no seller
                 price=cost / quantity,  # Average price per share
                 quantity=quantity,
-                executed_at=datetime.utcnow()
+                executed_at=utc_now()
             )
             db.session.add(trade)
             
@@ -122,14 +121,14 @@ class MarketService:
             )
             price_history = PriceHistory(
                 market_id=market_id,
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 price=new_price,
                 reason=f"buy_{user_id}"
             )
             db.session.add(price_history)
             
             # Update market
-            market.updated_at = datetime.utcnow()
+            market.updated_at = utc_now()
             
             # Commit entire transaction atomically
             db.session.commit()
@@ -175,20 +174,20 @@ class MarketService:
         
         # Start transaction
         try:
-            # Get market
-            market = Market.query.get(market_id)
+            # Get market with row-level lock to prevent race conditions
+            market = Market.query.filter_by(id=market_id).with_for_update().first()
             if not market:
                 raise ValueError(f"Market {market_id} not found")
-            
+
             # Check market status
             if market.status != MarketStatus.OPEN:
                 raise MarketClosedError(f"Market {market_id} is not open (status: {market.status.value})")
-            
-            # Get user position
+
+            # Get user position with row-level lock to prevent race conditions
             position = Position.query.filter_by(
                 user_id=user_id,
                 market_id=market_id
-            ).first()
+            ).with_for_update().first()
             
             if not position or Decimal(str(position.shares)) < quantity:
                 raise InsufficientSharesError(
@@ -218,7 +217,7 @@ class MarketService:
             
             position.shares = new_shares
             position.realized_pnl = Decimal(str(position.realized_pnl)) + realized_pnl_for_sale
-            position.last_marked_at = datetime.utcnow()
+            position.last_marked_at = utc_now()
             
             # If all shares sold, we could delete the position, but we'll keep it for history
             # Optionally: if new_shares == 0, we could delete it
@@ -240,7 +239,7 @@ class MarketService:
                 seller_user_id=user_id,
                 price=payout / quantity,  # Average price per share
                 quantity=quantity,
-                executed_at=datetime.utcnow()
+                executed_at=utc_now()
             )
             db.session.add(trade)
             
@@ -253,14 +252,14 @@ class MarketService:
             )
             price_history = PriceHistory(
                 market_id=market_id,
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 price=new_price,
                 reason=f"sell_{user_id}"
             )
             db.session.add(price_history)
             
             # Update market
-            market.updated_at = datetime.utcnow()
+            market.updated_at = utc_now()
             
             # Commit transaction
             db.session.commit()
@@ -296,17 +295,17 @@ class MarketService:
         Returns:
             Dict with market info or None if not found
         """
-        market = Market.query.get(market_id)
+        market = db.session.get(Market, market_id)
         if not market:
             return None
-        
+
         current_supply = get_current_supply(market_id)
         current_price = price(
             current_supply,
             Decimal(str(market.a)),
             Decimal(str(market.b))
         )
-        
+
         return {
             "market_id": market.id,
             "event_id": market.event_id,
@@ -340,9 +339,9 @@ class MarketService:
         
         if not position:
             return None
-        
+
         # Get current market price for unrealized P&L
-        market = Market.query.get(market_id)
+        market = db.session.get(Market, market_id)
         if market:
             current_supply = get_current_supply(market_id)
             current_price = price(

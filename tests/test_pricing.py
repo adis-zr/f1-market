@@ -142,36 +142,36 @@ class TestSellPayout:
         with pytest.raises(ValueError, match="Supply cannot be negative"):
             sell_payout(Decimal('-1'), Decimal('1'), Decimal('1'), Decimal('0'))
     
-    def test_sell_payout_decreases_with_remaining_supply(self):
-        """Selling when more shares remain should give higher payout per share."""
+    def test_sell_payout_increases_with_supply(self):
+        """Selling when supply is higher gives higher payout (price is higher on curve)."""
         a = Decimal('1.0')
         b = Decimal('0.5')
-        
+
         # Selling 1 share when supply is 10
         payout_high_supply = sell_payout(Decimal('10'), Decimal('1'), a, b)
         # Selling 1 share when supply is 2
         payout_low_supply = sell_payout(Decimal('2'), Decimal('1'), a, b)
-        
-        # Higher supply should give lower payout per share (bonding curve effect)
-        assert payout_high_supply < payout_low_supply
+
+        # Higher supply means higher price on bonding curve, so higher payout
+        assert payout_high_supply > payout_low_supply
 
 
 class TestPricingConsistency:
     """Tests for consistency between buy and sell operations."""
     
     def test_buy_then_sell_round_trip(self):
-        """Buying then selling the same quantity should result in a loss (due to curve)."""
+        """Buying then selling the same quantity should break even (no fees in this AMM)."""
         a = Decimal('1.0')
         b = Decimal('0.5')
         s = Decimal('10.0')
         delta_s = Decimal('2.0')
-        
+
         cost = buy_cost(s, delta_s, a, b)
         payout = sell_payout(s + delta_s, delta_s, a, b)
-        
-        # Due to bonding curve, selling immediately after buying should result in loss
-        # (This is the spread/AMM fee)
-        assert payout < cost
+
+        # In a symmetric bonding curve without fees, buy then immediate sell breaks even
+        # The cost to buy from s to s+delta_s equals the payout for selling from s+delta_s to s
+        assert abs(payout - cost) < Decimal('0.0001')
     
     def test_price_matches_buy_cost_for_small_quantity(self):
         """For very small quantities, price should approximate buy_cost / quantity."""

@@ -7,6 +7,7 @@ import {
   Briefcase,
   Wallet,
 } from 'lucide-react';
+import { appConfig } from '@/config';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -22,7 +23,7 @@ export function Sidebar() {
   return (
     <div className="flex h-full w-64 flex-col border-r bg-card">
       <div className="flex h-16 items-center border-b px-6">
-        <h1 className="text-xl font-bold">F1 Market</h1>
+        <h1 className="text-xl font-bold">{appConfig.name}</h1>
       </div>
       <nav className="flex-1 space-y-1 p-4">
         {navigation.map((item) => {

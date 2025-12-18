@@ -1,0 +1,106 @@
+# Database Migrations
+
+Single-database configuration for Flask using Flask-Migrate (Alembic).
+
+## Overview
+
+This Flask application uses Flask-Migrate to manage database schema changes. Flask-Migrate is a wrapper around Alembic that integrates with Flask-SQLAlchemy.
+
+## Common Commands
+
+### Check Current Migration Status
+```bash
+flask db current
+```
+
+### View Migration History
+```bash
+flask db history
+```
+
+### Create a New Migration
+After modifying models in `db/models.py`, create a migration:
+```bash
+flask db migrate -m "Description of changes"
+```
+
+### Apply Migrations
+To upgrade the database to the latest version:
+```bash
+flask db upgrade
+```
+
+To upgrade to a specific revision:
+```bash
+flask db upgrade <revision_id>
+```
+
+### Rollback Migrations
+To downgrade to the previous version:
+```bash
+flask db downgrade
+```
+
+To downgrade to a specific revision:
+```bash
+flask db downgrade <revision_id>
+```
+
+### Show Pending Migrations
+```bash
+flask db show
+```
+
+## Initial Setup (Already Completed)
+
+The initial migration has already been created and stamped. The database was marked as being at the initial migration version without running the migration (since the schema already existed).
+
+Steps that were performed:
+1. Added Flask-Migrate to requirements.txt
+2. Initialized Flask-Migrate in app.py
+3. Created migrations folder with `flask db init`
+4. Updated env.py to import all models
+5. Created initial migration with `flask db migrate -m "Initial migration"`
+6. Stamped existing database with `flask db stamp head`
+
+## Workflow for Schema Changes
+
+1. Modify your models in `db/models.py`
+2. Create a migration: `flask db migrate -m "Add new column to users table"`
+3. Review the generated migration file in `migrations/versions/`
+4. Apply the migration: `flask db upgrade`
+5. Commit both the model changes and migration file to version control
+
+## Important Notes
+
+- Always review auto-generated migrations before applying them
+- The `env.py` file imports all models to ensure they're detected by Alembic
+- Migration files are stored in `migrations/versions/`
+- The database maintains a special `alembic_version` table to track the current migration state
+- Never modify migration files after they've been applied to production
+- Always commit migration files to version control along with model changes
+
+## Production Deployment
+
+When deploying to production:
+1. Ensure all migration files are in version control
+2. Run `flask db upgrade` as part of your deployment process
+3. Consider running migrations in a separate step before starting the application
+4. Test migrations on a staging environment first
+
+## Troubleshooting
+
+### If migrations get out of sync:
+```bash
+# Check current version
+flask db current
+
+# Check what Alembic thinks the schema should be
+flask db show
+
+# If needed, manually stamp to a specific revision
+flask db stamp <revision_id>
+```
+
+### If auto-detection misses changes:
+Ensure all models are imported in `migrations/env.py`

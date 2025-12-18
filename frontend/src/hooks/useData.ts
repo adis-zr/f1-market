@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { sportsApi, eventsApi, marketsApi, portfolioApi } from '@/api/endpoints';
+import type { EstimateResponse } from '@/api/endpoints';
 import type {
   Sport,
   League,
@@ -210,5 +211,61 @@ export function usePortfolio() {
     totalPnL,
     ...positionsQuery,
   };
+}
+
+// Cost estimation hook with debounce
+export function useEstimateCost(
+  marketId: number,
+  quantity: number,
+  side: 'buy' | 'sell',
+  debounceMs = 300
+) {
+  const [estimate, setEstimate] = useState<EstimateResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    // Clear estimate if quantity is invalid
+    if (!quantity || quantity <= 0 || !marketId) {
+      setEstimate(null);
+      setError(null);
+      return;
+    }
+
+    // Cancel previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const timeoutId = setTimeout(async () => {
+      abortControllerRef.current = new AbortController();
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const result = await marketsApi.estimateCost(marketId, quantity, side);
+        setEstimate(result);
+      } catch (err) {
+        // Ignore abort errors
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
+        setError('Failed to estimate cost');
+        setEstimate(null);
+      } finally {
+        setIsLoading(false);
+      }
+    }, debounceMs);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [marketId, quantity, side, debounceMs]);
+
+  return { estimate, isLoading, error };
 }
 

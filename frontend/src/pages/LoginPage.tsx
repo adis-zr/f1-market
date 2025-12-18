@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import apiClient from '@/api/client';
+import apiClient, { fetchCsrfToken } from '@/api/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/hooks';
+import { isApiError } from '@/api/types';
+import { appConfig } from '@/config';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -25,8 +27,10 @@ export function LoginPage() {
       await apiClient.post('/auth/request-otp', { email });
       setStep('otp');
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      setError(error.response?.data?.message || 'Failed to send OTP');
+      const errorMessage = isApiError(err)
+        ? err.response.data.message || err.response.data.error || 'Failed to send OTP'
+        : 'Failed to send OTP';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -39,12 +43,16 @@ export function LoginPage() {
 
     try {
       await apiClient.post('/auth/verify-otp', { email, otp });
+      // Refresh CSRF token after login (session changed)
+      await fetchCsrfToken();
       // Refetch user query and wait for it to complete before navigating
       await queryClient.refetchQueries({ queryKey: queryKeys.currentUser });
       navigate('/dashboard');
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      setError(error.response?.data?.message || 'Invalid OTP');
+      const errorMessage = isApiError(err)
+        ? err.response.data.message || err.response.data.error || 'Invalid OTP'
+        : 'Invalid OTP';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -54,11 +62,11 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>F1 Market</CardTitle>
+          <CardTitle>{appConfig.login.title}</CardTitle>
           <CardDescription>
             {step === 'email'
-              ? 'Enter your email to receive a login code'
-              : 'Enter the 6-digit code sent to your email'}
+              ? appConfig.login.emailStepDescription
+              : appConfig.login.otpStepDescription}
           </CardDescription>
         </CardHeader>
         <CardContent>

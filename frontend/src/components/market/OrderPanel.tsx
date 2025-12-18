@@ -3,8 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useMarket, usePosition, useWallet, useBuyShares, useSellShares, useToast } from '@/hooks';
+import { useMarket, usePosition, useWallet, useBuyShares, useSellShares, useToast, useEstimateCost } from '@/hooks';
 import { formatPrice, formatShares } from '@/lib/formatters';
+import { isApiError } from '@/api/types';
 
 interface OrderPanelProps {
   marketId: number;
@@ -22,10 +23,16 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
 
   const qty = parseFloat(quantity) || 0;
   const currentPrice = market?.current_price || 0;
-  const estimatedCost = qty * currentPrice;
-  const estimatedPayout = qty * currentPrice;
   const availableShares = position?.shares || 0;
   const availableBalance = wallet?.available_balance || 0;
+
+  // Use bonding curve estimation for accurate cost/payout
+  const { estimate: buyEstimate, isLoading: buyEstimateLoading } = useEstimateCost(marketId, qty, 'buy');
+  const { estimate: sellEstimate, isLoading: sellEstimateLoading } = useEstimateCost(marketId, qty, 'sell');
+
+  // Get accurate cost from bonding curve estimate, fallback to simple multiplication
+  const estimatedCost = buyEstimate?.side === 'buy' ? buyEstimate.estimated_cost : qty * currentPrice;
+  const estimatedPayout = sellEstimate?.side === 'sell' ? sellEstimate.estimated_payout : qty * currentPrice;
 
   const handleBuy = async () => {
     if (qty <= 0) {
@@ -42,10 +49,12 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
       toast({ title: 'Success', description: `Bought ${qty} shares` });
       setQuantity('');
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { error?: string } } };
+      const errorMessage = isApiError(error)
+        ? error.response.data.error || error.response.data.message || 'Failed to buy shares'
+        : 'Failed to buy shares';
       toast({
         title: 'Error',
-        description: err.response?.data?.error || 'Failed to buy shares',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
@@ -66,10 +75,12 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
       toast({ title: 'Success', description: `Sold ${qty} shares` });
       setQuantity('');
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { error?: string } } };
+      const errorMessage = isApiError(error)
+        ? error.response.data.error || error.response.data.message || 'Failed to sell shares'
+        : 'Failed to sell shares';
       toast({
         title: 'Error',
-        description: err.response?.data?.error || 'Failed to sell shares',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
@@ -108,7 +119,9 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Estimated cost</span>
-                <span className="font-medium">{formatPrice(estimatedCost)}</span>
+                <span className="font-medium">
+                  {buyEstimateLoading ? '...' : formatPrice(estimatedCost)}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Available balance</span>
@@ -118,7 +131,7 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
             <Button
               className="w-full"
               onClick={handleBuy}
-              disabled={isLoading || qty <= 0 || estimatedCost > availableBalance}
+              disabled={isLoading || buyEstimateLoading || qty <= 0 || estimatedCost > availableBalance}
             >
               {isLoading ? 'Processing...' : 'Buy Shares'}
             </Button>
@@ -147,7 +160,9 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Estimated payout</span>
-                <span className="font-medium">{formatPrice(estimatedPayout)}</span>
+                <span className="font-medium">
+                  {sellEstimateLoading ? '...' : formatPrice(estimatedPayout)}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Your shares</span>
@@ -157,7 +172,7 @@ export function OrderPanel({ marketId }: OrderPanelProps) {
             <Button
               className="w-full"
               onClick={handleSell}
-              disabled={isLoading || qty <= 0 || qty > availableShares}
+              disabled={isLoading || sellEstimateLoading || qty <= 0 || qty > availableShares}
             >
               {isLoading ? 'Processing...' : 'Sell Shares'}
             </Button>

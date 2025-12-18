@@ -5,6 +5,7 @@ from datetime import datetime
 from db import db
 from services.settlement_service import SettlementService
 from services.market_service import MarketService
+from services.wallet_service import WalletService
 from db import (
     EventResult, ResultStatus, EventStatus, MarketStatus, TransactionType
 )
@@ -114,7 +115,8 @@ class TestSettlementService:
                 display_name='Test Driver 2'
             )
             db.session.add(asset2)
-            
+            db.session.flush()  # Flush to get asset2.id before using it
+
             market2 = Market(
                 event_id=test_event.id,
                 asset_id=asset2.id,

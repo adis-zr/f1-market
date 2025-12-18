@@ -1,6 +1,6 @@
 """Race-related functionality for F1 API."""
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from .client import F1APIClient
 from .seasons import SeasonService
 from .teams import TeamService
@@ -32,7 +32,7 @@ class RaceService:
         Returns:
             True if a race is currently live, False otherwise
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         livescores = self.client.make_request("/livescores/now")
         if not livescores:
             return False
@@ -86,7 +86,7 @@ class RaceService:
         Returns:
             Current live stage dict or None if no live stage
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         livescores = self.client.make_request("/livescores/now")
         if not livescores:
             return None
@@ -123,7 +123,7 @@ class RaceService:
             Latest finished race stage dict or None if not found
         """
         if season_year is None:
-            season_year = datetime.utcnow().year
+            season_year = datetime.now(timezone.utc).year
 
         season_id = self.season_service.get_season_id(season_year)
         if not season_id:
@@ -170,7 +170,7 @@ class RaceService:
                 try:
                     ts_int = int(ts)
                     race_time = datetime.utcfromtimestamp(ts_int)
-                    if (datetime.utcnow() - race_time).total_seconds() > 2 * 3600:
+                    if (datetime.now(timezone.utc) - race_time).total_seconds() > 2 * 3600:
                         has_past_timestamp = True
                 except (TypeError, ValueError):
                     pass
@@ -359,7 +359,7 @@ class RaceService:
         Returns:
             Dict containing stage info + live results, or None if nothing live.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         livescores = self.client.make_request("/livescores/now")
         if not livescores:
             return None
@@ -398,6 +398,6 @@ class RaceService:
             "season_id": chosen_stage.get("season_id"),
             "time": chosen_stage.get("time"),
             "results": results,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 

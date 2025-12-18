@@ -75,11 +75,12 @@ class TestMarketService:
         with app.app_context():
             # Buy shares first
             MarketService.buy_shares(test_user.id, test_market.id, Decimal('10.0'))
-            
-            # Close market
-            test_market.status = MarketStatus.CLOSED
+
+            # Close market - need to re-fetch after buy_shares commits
+            market = db.session.get(Market, test_market.id)
+            market.status = MarketStatus.CLOSED
             db.session.commit()
-            
+
             with pytest.raises(MarketClosedError):
                 MarketService.sell_shares(test_user.id, test_market.id, Decimal('5.0'))
     

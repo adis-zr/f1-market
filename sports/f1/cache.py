@@ -1,6 +1,6 @@
 """In-memory caching utilities for F1 API data."""
 from typing import Dict, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 class Cache:
@@ -36,7 +36,7 @@ class Cache:
         cache_key = self.get_cache_key(key)
         if cache_key in self._cache:
             ts = self._cache_timestamps.get(cache_key)
-            if ts and datetime.utcnow() - ts < self._cache_ttl:
+            if ts and datetime.now(timezone.utc) - ts < self._cache_ttl:
                 return self._cache[cache_key]
             # expired
             self._cache.pop(cache_key, None)
@@ -53,5 +53,5 @@ class Cache:
         """
         cache_key = self.get_cache_key(key)
         self._cache[cache_key] = value
-        self._cache_timestamps[cache_key] = datetime.utcnow()
+        self._cache_timestamps[cache_key] = datetime.now(timezone.utc)
 

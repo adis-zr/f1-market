@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 # Load environment variables from .env file (for local dev)
 load_dotenv()
 
+# Configuration constants
+CSRF_TOKEN_EXPIRY_SECONDS = 3600  # 1 hour
+DEFAULT_CACHE_TTL_MINUTES = 10
+MAX_QUERY_LIMIT = 1000
+
 
 def create_app_config(app: Flask) -> None:
     """Configure Flask application with all settings."""
@@ -25,6 +30,11 @@ def create_app_config(app: Flask) -> None:
 
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_SECURE'] = env == 'production'
+
+    # CSRF configuration
+    app.config['WTF_CSRF_TIME_LIMIT'] = CSRF_TOKEN_EXPIRY_SECONDS
+    app.config['WTF_CSRF_SSL_STRICT'] = env == 'production'
 
     # Database configuration
     if env == 'production':
@@ -60,7 +70,7 @@ def create_app_config(app: Flask) -> None:
     app.config['F1_PROVIDER'] = os.environ.get('F1_PROVIDER', 'sportmonks')
     app.config['F1_SPORTSMONK_BASE_URL'] = os.environ.get('F1_SPORTSMONK_BASE_URL', 'https://f1.sportmonks.com/api/v1.0')
     app.config['SPORTSMONK_API_KEY'] = os.environ.get('SPORTSMONK_API_KEY')
-    app.config['F1_CACHE_TTL_MINUTES'] = int(os.environ.get('F1_CACHE_TTL_MINUTES', '10'))
+    app.config['F1_CACHE_TTL_MINUTES'] = int(os.environ.get('F1_CACHE_TTL_MINUTES', str(DEFAULT_CACHE_TTL_MINUTES)))
 
     # Email allowlist for OTP requests (comma-separated list)
     allowed_emails_str = os.environ.get('OTP_ALLOWED_EMAILS', '')

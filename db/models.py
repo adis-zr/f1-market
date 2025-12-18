@@ -1,12 +1,21 @@
 """Database models."""
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 from decimal import Decimal
 from passlib.context import CryptContext
 
 db = SQLAlchemy()
 otp_context = CryptContext(schemes=["argon2"], deprecated="auto")
+
+
+def utc_now():
+    """Return current UTC time as timezone-aware datetime.
+
+    This replaces the deprecated datetime.utcnow() which returns
+    timezone-naive datetimes and is deprecated in Python 3.12+.
+    """
+    return datetime.now(timezone.utc)
 
 class UserRole(enum.Enum):
     PLAYER = "player"
@@ -19,8 +28,8 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     username = db.Column(db.String(80), nullable=True, index=True)
     role = db.Column(db.String(20), nullable=False, default=UserRole.PLAYER.value, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now, nullable=False)
     
     def __repr__(self):
         return f'<User {self.email} ({self.role})>'
@@ -40,7 +49,7 @@ class OTP(db.Model):
     code_hash = db.Column(db.String(255), nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False, index=True)
     used = db.Column(db.Boolean, default=False, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     def __repr__(self):
         return f'<OTP {self.email}>'
@@ -54,8 +63,19 @@ class OTP(db.Model):
         return otp_context.verify(code, self.code_hash)
     
     def is_valid(self):
-        """Check if OTP is still valid (not expired and not used)."""
-        return not self.used and datetime.utcnow() < self.expires_at
+        """Check if OTP is still valid (not expired and not used).
+
+        Handles both timezone-aware and timezone-naive datetimes for compatibility
+        with different database backends (SQLite stores naive, PostgreSQL can store aware).
+        """
+        if self.used:
+            return False
+        now = utc_now()
+        expires = self.expires_at
+        # If expires_at is naive (e.g., from SQLite), make it aware for comparison
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return now < expires
 
 
 # ============================================================================
@@ -117,7 +137,7 @@ class Sport(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(20), unique=True, nullable=False, index=True)  # e.g., "F1", "NBA"
     name = db.Column(db.String(100), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Relationships
     leagues = db.relationship('League', backref='sport', lazy=True)
@@ -135,7 +155,7 @@ class League(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sport_id = db.Column(db.Integer, db.ForeignKey('sports.id'), nullable=False, index=True)
     name = db.Column(db.String(100), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Relationships
     seasons = db.relationship('Season', backref='league', lazy=True)
@@ -151,7 +171,7 @@ class Season(db.Model):
     league_id = db.Column(db.Integer, db.ForeignKey('leagues.id'), nullable=False, index=True)
     year = db.Column(db.Integer, nullable=False, index=True)
     status = db.Column(db.Enum(SeasonStatus), nullable=False, default=SeasonStatus.UPCOMING, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Relationships
     events = db.relationship('Event', backref='season', lazy=True)
@@ -171,7 +191,7 @@ class Event(db.Model):
     end_at = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.Enum(EventStatus), nullable=False, default=EventStatus.UPCOMING, index=True)
     metadata_json = db.Column(db.JSON, nullable=True)  # Sport-specific info
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Relationships
     markets = db.relationship('Market', backref='event', lazy=True)
@@ -189,7 +209,7 @@ class Participant(db.Model):
     name = db.Column(db.String(200), nullable=False)
     short_code = db.Column(db.String(50), nullable=True, index=True)
     metadata_json = db.Column(db.JSON, nullable=True)  # team, position, jersey number, constructor, etc.
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Relationships
     assets = db.relationship('Asset', foreign_keys='Asset.participant_id', backref='participant', lazy=True)
@@ -208,7 +228,7 @@ class Team(db.Model):
     name = db.Column(db.String(200), nullable=False)
     short_code = db.Column(db.String(50), nullable=True, index=True)
     metadata_json = db.Column(db.JSON, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Relationships
     assets = db.relationship('Asset', foreign_keys='Asset.team_id', backref='team', lazy=True)
@@ -227,7 +247,7 @@ class ParticipantTeamMembership(db.Model):
     season_id = db.Column(db.Integer, db.ForeignKey('seasons.id'), nullable=False, index=True)
     start_date = db.Column(db.Date, nullable=True)
     end_date = db.Column(db.Date, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     def __repr__(self):
         return f'<ParticipantTeamMembership {self.participant_id} -> {self.team_id}>'
@@ -246,7 +266,7 @@ class Asset(db.Model):
     team_id = db.Column(db.Integer, db.ForeignKey('teams.id'), nullable=True, index=True)
     symbol = db.Column(db.String(50), unique=True, nullable=False, index=True)
     display_name = db.Column(db.String(200), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Relationships
     markets = db.relationship('Market', backref='asset', lazy=True)
@@ -266,8 +286,8 @@ class Market(db.Model):
     status = db.Column(db.Enum(MarketStatus), nullable=False, default=MarketStatus.OPEN, index=True)
     a = db.Column(db.Numeric(precision=18, scale=8), nullable=False)  # Bonding curve param
     b = db.Column(db.Numeric(precision=18, scale=8), nullable=False)  # Bonding curve baseline
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now, nullable=False)
     
     # Relationships
     positions = db.relationship('Position', backref='market', lazy=True)
@@ -284,10 +304,10 @@ class PriceHistory(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     market_id = db.Column(db.Integer, db.ForeignKey('markets.id'), nullable=False, index=True)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    timestamp = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
     price = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
     reason = db.Column(db.String(200), nullable=True)  # e.g., "buy", "sell", "settlement"
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     def __repr__(self):
         return f'<PriceHistory {self.market_id} @ {self.timestamp}: {self.price}>'
@@ -303,8 +323,8 @@ class Position(db.Model):
     avg_entry_price = db.Column(db.Numeric(precision=18, scale=8), nullable=False, default=Decimal('0'))
     realized_pnl = db.Column(db.Numeric(precision=18, scale=8), nullable=False, default=Decimal('0'))
     last_marked_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now, nullable=False)
     
     # Unique constraint: one position per user per market
     __table_args__ = (db.UniqueConstraint('user_id', 'market_id', name='uq_user_market'),)
@@ -321,11 +341,11 @@ class Trade(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     market_id = db.Column(db.Integer, db.ForeignKey('markets.id'), nullable=False, index=True)
-    buyer_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    buyer_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     seller_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     price = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
     quantity = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
-    executed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    executed_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
     
     # Relationships
     buyer = db.relationship('User', foreign_keys=[buyer_user_id], backref='buy_trades')
@@ -346,7 +366,7 @@ class Wallet(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False, index=True)
     balance = db.Column(db.Numeric(precision=18, scale=8), nullable=False, default=Decimal('0'))
     locked_balance = db.Column(db.Numeric(precision=18, scale=8), nullable=False, default=Decimal('0'))
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now, nullable=False)
     
     # Relationships
     user = db.relationship('User', backref='wallet', uselist=False)
@@ -367,7 +387,7 @@ class LedgerEntry(db.Model):
     reference_type = db.Column(db.String(50), nullable=True)  # e.g., "market", "event"
     reference_id = db.Column(db.Integer, nullable=True, index=True)
     description = db.Column(db.String(500), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False, index=True)
     
     # Relationships
     user = db.relationship('User', backref='ledger_entries')
@@ -386,11 +406,11 @@ class EventResult(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     event_id = db.Column(db.Integer, db.ForeignKey('events.id'), nullable=False, index=True)
     participant_id = db.Column(db.Integer, db.ForeignKey('participants.id'), nullable=False, index=True)
-    primary_score = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
+    primary_score = db.Column(db.Numeric(precision=18, scale=8), nullable=False, index=True)
     rank = db.Column(db.Integer, nullable=True, index=True)
     status = db.Column(db.Enum(ResultStatus), nullable=False, default=ResultStatus.FINISHED, index=True)
     metrics_json = db.Column(db.JSON, nullable=True)  # Additional sport-specific metrics
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Unique constraint: one result per participant per event
     __table_args__ = (db.UniqueConstraint('event_id', 'participant_id', name='uq_event_participant'),)
@@ -410,7 +430,7 @@ class ScoringRule(db.Model):
     beta = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
     formula_type = db.Column(db.Enum(FormulaType), nullable=False, default=FormulaType.LINEAR_NORMALIZED)
     config_json = db.Column(db.JSON, nullable=True)  # Additional formula parameters
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     # Relationships
     markets = db.relationship('Market', backref='scoring_rule', lazy=True)
@@ -424,11 +444,11 @@ class MarketSettlement(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     market_id = db.Column(db.Integer, db.ForeignKey('markets.id'), unique=True, nullable=False, index=True)
-    settled_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    settled_at = db.Column(db.DateTime, nullable=False, default=utc_now)
     settlement_price = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
     payout_per_share = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
     source = db.Column(db.String(200), nullable=True)  # e.g., "event_result", "manual"
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     
     def __repr__(self):
         return f'<MarketSettlement market={self.market_id} payout={self.payout_per_share}>'
