@@ -191,10 +191,13 @@ export interface ReplaySession {
   user_id: number;
   current_race: number; // 0-24
   status: 'active' | 'completed' | 'abandoned';
+  difficulty: ReplayDifficulty;
   started_at: string | null;
   completed_at: string | null;
   final_balance: number | null;
 }
+
+export type ReplayDifficulty = 'easy' | 'medium' | 'hard';
 
 export interface ReplayWallet {
   balance: number;
@@ -328,9 +331,11 @@ export interface ReplayEstimateResponse {
 export interface ReplayLeaderboardEntry {
   rank: number;
   username: string;
-  user_id: number;
+  user_id: number | null;
+  is_ai: boolean;
   final_balance: number;
   return_pct: number;
+  difficulty: ReplayDifficulty;
   completed_at: string | null;
 }
 
@@ -340,6 +345,7 @@ export interface ReplayLeaderboard {
     rank: number;
     final_balance: number;
     return_pct: number;
+    difficulty: ReplayDifficulty;
     completed_at: string | null;
   } | null;
 }

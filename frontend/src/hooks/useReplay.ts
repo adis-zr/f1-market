@@ -8,6 +8,7 @@ import type {
   ReplaySellResponse,
   ReplayEstimateResponse,
   ReplayLeaderboard,
+  ReplayDifficulty,
 } from '@/api/types';
 
 // Query key factory for replay cache management
@@ -119,10 +120,10 @@ export function useReplayPriceHistory(marketId: number, limit = 100) {
   });
 }
 
-export function useReplayLeaderboard(limit = 50) {
+export function useReplayLeaderboard(limit = 50, difficulty?: ReplayDifficulty) {
   return useQuery<ReplayLeaderboard>({
-    queryKey: replayQueryKeys.leaderboard,
-    queryFn: () => replayApi.getLeaderboard(limit),
+    queryKey: [...replayQueryKeys.leaderboard, difficulty] as const,
+    queryFn: () => replayApi.getLeaderboard(limit, difficulty),
     staleTime: 2 * 60 * 1000,
   });
 }
@@ -134,8 +135,8 @@ export function useReplayLeaderboard(limit = 50) {
 export function useStartReplay() {
   const queryClient = useQueryClient();
 
-  return useMutation<ReplayState, Error>({
-    mutationFn: () => replayApi.startReplay(),
+  return useMutation<ReplayState, Error, ReplayDifficulty | undefined>({
+    mutationFn: (difficulty) => replayApi.startReplay(difficulty),
     onSuccess: (data) => {
       queryClient.setQueryData(replayQueryKeys.session, data);
       queryClient.invalidateQueries({ queryKey: replayQueryKeys.markets });

@@ -14,6 +14,12 @@ class ReplaySessionStatus(enum.Enum):
     ABANDONED = "abandoned"
 
 
+class ReplayDifficulty(enum.Enum):
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+
+
 class ReplaySession(db.Model):
     """A user's replay session instance.
 
@@ -26,6 +32,7 @@ class ReplaySession(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     current_race = db.Column(db.Integer, nullable=False, default=0)  # 0 = not started, 1-24 = race number
     status = db.Column(db.Enum(ReplaySessionStatus), nullable=False, default=ReplaySessionStatus.ACTIVE, index=True)
+    difficulty = db.Column(db.Enum(ReplayDifficulty), nullable=False, default=ReplayDifficulty.MEDIUM, index=True)
     started_at = db.Column(db.DateTime, default=utc_now, nullable=False)
     completed_at = db.Column(db.DateTime, nullable=True)
     final_balance = db.Column(db.Numeric(precision=18, scale=8), nullable=True)  # Cached for leaderboard
@@ -37,6 +44,7 @@ class ReplaySession(db.Model):
     positions = db.relationship('ReplayPosition', backref='session', cascade='all, delete-orphan')
     trades = db.relationship('ReplayTrade', backref='session', cascade='all, delete-orphan')
     ledger_entries = db.relationship('ReplayLedgerEntry', backref='session', cascade='all, delete-orphan')
+    driver_positions = db.relationship('ReplayDriverPosition', backref='session', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<ReplaySession {self.id} user={self.user_id} race={self.current_race} status={self.status.value}>'
@@ -164,3 +172,46 @@ class ReplayPriceHistory(db.Model):
 
     def __repr__(self):
         return f'<ReplayPriceHistory market={self.market_id} @ {self.timestamp}: {self.price}>'
+
+
+class ReplayAIPlayer(db.Model):
+    """Pre-computed AI player for leaderboard competition.
+
+    AI players are simulated using trading strategies and provide
+    competition on the leaderboard based on difficulty level.
+    """
+    __tablename__ = 'replay_ai_players'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    difficulty = db.Column(db.Enum(ReplayDifficulty), nullable=False, index=True)
+    final_balance = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
+    strategy_type = db.Column(db.String(50), nullable=False)
+
+    def __repr__(self):
+        return f'<ReplayAIPlayer {self.name} difficulty={self.difficulty.value} balance={self.final_balance}>'
+
+
+class ReplayDriverPosition(db.Model):
+    """Season-long position in a driver across races.
+
+    This model tracks shares held in a driver that persist across races,
+    enabling the carry-forward behavior where stocks aren't sold at settlement.
+    """
+    __tablename__ = 'replay_driver_positions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('replay_sessions.id'), nullable=False, index=True)
+    driver_code = db.Column(db.String(10), nullable=False, index=True)
+    shares = db.Column(db.Numeric(precision=18, scale=8), nullable=False, default=Decimal('0'))
+    total_cost_basis = db.Column(db.Numeric(precision=18, scale=8), nullable=False, default=Decimal('0'))
+    cumulative_payouts = db.Column(db.Numeric(precision=18, scale=8), nullable=False, default=Decimal('0'))
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('session_id', 'driver_code', name='uq_replay_driver_position'),
+    )
+
+    def __repr__(self):
+        return f'<ReplayDriverPosition session={self.session_id} driver={self.driver_code} shares={self.shares}>'

@@ -1,23 +1,48 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useReplay, useStartReplay, useReplayLeaderboard } from '@/hooks';
 import { formatPrice } from '@/lib/formatters';
-import { Play, Trophy, RefreshCw, TrendingUp } from 'lucide-react';
+import { Play, Trophy, RefreshCw, TrendingUp, Users, Bot } from 'lucide-react';
+import type { ReplayDifficulty } from '@/api/types';
+import { cn } from '@/lib/utils';
+
+const DIFFICULTY_CONFIG = {
+  easy: {
+    label: 'Easy',
+    aiCount: 5,
+    description: 'Fewer AI players with weaker strategies',
+    color: 'border-green-500',
+  },
+  medium: {
+    label: 'Medium',
+    aiCount: 10,
+    description: 'Balanced mix of AI strategies',
+    color: 'border-yellow-500',
+  },
+  hard: {
+    label: 'Hard',
+    aiCount: 20,
+    description: 'Many skilled AI competitors',
+    color: 'border-red-500',
+  },
+} as const;
 
 export function ReplayLandingPage() {
   const navigate = useNavigate();
-  const { hasActiveSession, currentRace, isLoading } = useReplay();
+  const { hasActiveSession, currentRace, isLoading, session } = useReplay();
   const startReplay = useStartReplay();
   const { data: leaderboard } = useReplayLeaderboard(10);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<ReplayDifficulty>('medium');
 
   const handleStartOrContinue = async () => {
     if (hasActiveSession) {
       navigate('/replay/dashboard');
     } else {
       try {
-        await startReplay.mutateAsync();
+        await startReplay.mutateAsync(selectedDifficulty);
         navigate('/replay/dashboard');
       } catch (error) {
         console.error('Failed to start replay:', error);
@@ -67,6 +92,11 @@ export function ReplayLandingPage() {
                 <div className="space-y-4">
                   <div className="text-sm text-muted-foreground">
                     You have an active session at Race {currentRace} of 24
+                    {session?.difficulty && (
+                      <span className="ml-2 font-medium">
+                        ({DIFFICULTY_CONFIG[session.difficulty].label} difficulty)
+                      </span>
+                    )}
                   </div>
                   <Button size="lg" onClick={handleStartOrContinue}>
                     <Play className="mr-2 h-5 w-5" />
@@ -74,18 +104,52 @@ export function ReplayLandingPage() {
                   </Button>
                 </div>
               ) : (
-                <Button
-                  size="lg"
-                  onClick={handleStartOrContinue}
-                  disabled={startReplay.isPending}
-                >
-                  {startReplay.isPending ? (
-                    <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
-                  ) : (
-                    <Play className="mr-2 h-5 w-5" />
-                  )}
-                  Start Replay
-                </Button>
+                <div className="space-y-6">
+                  {/* Difficulty Selection */}
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-muted-foreground">Select Difficulty</div>
+                    <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto">
+                      {(Object.entries(DIFFICULTY_CONFIG) as [ReplayDifficulty, typeof DIFFICULTY_CONFIG.easy][]).map(
+                        ([key, config]) => (
+                          <Card
+                            key={key}
+                            className={cn(
+                              'cursor-pointer transition-all hover:shadow-md',
+                              selectedDifficulty === key
+                                ? `border-2 ${config.color} bg-accent/50`
+                                : 'border'
+                            )}
+                            onClick={() => setSelectedDifficulty(key)}
+                          >
+                            <CardContent className="pt-4 pb-4 text-center">
+                              <div className="font-semibold text-lg">{config.label}</div>
+                              <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mt-1">
+                                <Bot className="h-4 w-4" />
+                                <span>{config.aiCount} AI players</span>
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-2">
+                                {config.description}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <Button
+                    size="lg"
+                    onClick={handleStartOrContinue}
+                    disabled={startReplay.isPending}
+                  >
+                    {startReplay.isPending ? (
+                      <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+                    ) : (
+                      <Play className="mr-2 h-5 w-5" />
+                    )}
+                    Start Replay
+                  </Button>
+                </div>
               )}
             </div>
           </CardContent>

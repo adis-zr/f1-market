@@ -108,7 +108,8 @@ export const portfolioApi = {
 
 export const replayApi = {
   // Session management
-  startReplay: () => post<ReplayState>('/api/replay/start'),
+  startReplay: (difficulty?: 'easy' | 'medium' | 'hard') =>
+    post<ReplayState>('/api/replay/start', difficulty ? { difficulty } : undefined),
   getSession: () => get<ReplayState>('/api/replay/session'),
   resetReplay: () => post<ReplayState>('/api/replay/reset'),
 
@@ -148,5 +149,6 @@ export const replayApi = {
     }>(`/api/replay/races/${raceNumber}/results`),
 
   // Leaderboard
-  getLeaderboard: (limit = 50) => get<ReplayLeaderboard>('/api/replay/leaderboard', { limit }),
+  getLeaderboard: (limit = 50, difficulty?: 'easy' | 'medium' | 'hard') =>
+    get<ReplayLeaderboard>('/api/replay/leaderboard', { limit, ...(difficulty && { difficulty }) }),
 };

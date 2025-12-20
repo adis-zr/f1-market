@@ -1,8 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Bot } from 'lucide-react';
 import { formatPrice, formatDate } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
-import type { ReplayLeaderboardEntry } from '@/api/types';
+import type { ReplayLeaderboardEntry, ReplayDifficulty } from '@/api/types';
 
 interface LeaderboardTableProps {
   entries: ReplayLeaderboardEntry[];
@@ -10,17 +11,26 @@ interface LeaderboardTableProps {
     rank: number;
     final_balance: number;
     return_pct: number;
+    difficulty: ReplayDifficulty;
     completed_at: string | null;
   } | null;
   showTitle?: boolean;
   compact?: boolean;
+  showDifficulty?: boolean;
 }
+
+const DIFFICULTY_COLORS: Record<ReplayDifficulty, string> = {
+  easy: 'bg-green-500/20 text-green-700',
+  medium: 'bg-yellow-500/20 text-yellow-700',
+  hard: 'bg-red-500/20 text-red-700',
+};
 
 export function LeaderboardTable({
   entries,
   yourBest,
   showTitle = true,
   compact = false,
+  showDifficulty = false,
 }: LeaderboardTableProps) {
   const getRankBadge = (rank: number) => {
     if (rank === 1) return <Badge className="bg-yellow-500">1st</Badge>;
@@ -75,6 +85,7 @@ export function LeaderboardTable({
                 <tr className="border-b">
                   <th className="text-left p-2">Rank</th>
                   <th className="text-left p-2">Player</th>
+                  {showDifficulty && <th className="text-center p-2">Difficulty</th>}
                   <th className="text-right p-2">Final Balance</th>
                   {!compact && <th className="text-right p-2">Return</th>}
                   {!compact && <th className="text-right p-2">Date</th>}
@@ -82,9 +93,23 @@ export function LeaderboardTable({
               </thead>
               <tbody>
                 {entries.map((entry) => (
-                  <tr key={`${entry.user_id}-${entry.completed_at}`} className="border-b last:border-0">
+                  <tr key={`${entry.user_id ?? 'ai'}-${entry.username}-${entry.completed_at}`} className="border-b last:border-0">
                     <td className="p-2">{getRankBadge(entry.rank)}</td>
-                    <td className="p-2 font-medium">{entry.username}</td>
+                    <td className="p-2 font-medium">
+                      <span className="flex items-center gap-2">
+                        {entry.username}
+                        {entry.is_ai && (
+                          <Bot className="h-4 w-4 text-muted-foreground" title="AI Player" />
+                        )}
+                      </span>
+                    </td>
+                    {showDifficulty && (
+                      <td className="p-2 text-center">
+                        <Badge className={DIFFICULTY_COLORS[entry.difficulty]}>
+                          {entry.difficulty.charAt(0).toUpperCase() + entry.difficulty.slice(1)}
+                        </Badge>
+                      </td>
+                    )}
                     <td className="p-2 text-right font-semibold">
                       {formatPrice(entry.final_balance)}
                     </td>
@@ -100,7 +125,7 @@ export function LeaderboardTable({
                     )}
                     {!compact && (
                       <td className="p-2 text-right text-muted-foreground">
-                        {formatDate(entry.completed_at)}
+                        {entry.is_ai ? '-' : formatDate(entry.completed_at)}
                       </td>
                     )}
                   </tr>

@@ -7,7 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from db import db, utc_now, MarketStatus, TransactionType
 from db.replay_models import (
     ReplaySession, ReplaySessionStatus, ReplayWallet, ReplayMarket,
-    ReplayPosition, ReplayTrade, ReplayLedgerEntry, ReplayPriceHistory
+    ReplayPosition, ReplayTrade, ReplayLedgerEntry, ReplayPriceHistory,
+    ReplayDriverPosition
 )
 from pricing.bonding_curve import price, buy_cost, sell_payout
 from services.replay_service import (
@@ -105,6 +106,25 @@ class ReplayMarketService:
 
                 position.avg_entry_price = (old_shares * old_avg_price + cost) / new_shares
                 position.shares = new_shares
+
+            # Update driver-level position for carry-forward
+            driver_pos = ReplayDriverPosition.query.filter_by(
+                session_id=session_id,
+                driver_code=market.driver_code
+            ).with_for_update().first()
+
+            if driver_pos is None:
+                driver_pos = ReplayDriverPosition(
+                    session_id=session_id,
+                    driver_code=market.driver_code,
+                    shares=quantity,
+                    total_cost_basis=cost,
+                    cumulative_payouts=Decimal('0')
+                )
+                db.session.add(driver_pos)
+            else:
+                driver_pos.shares += quantity
+                driver_pos.total_cost_basis += cost
 
             # Create trade record
             trade = ReplayTrade(
@@ -247,6 +267,23 @@ class ReplayMarketService:
 
             position.shares = new_shares
             position.realized_pnl = Decimal(str(position.realized_pnl)) + realized_pnl_for_sale
+
+            # Update driver-level position for carry-forward
+            driver_pos = ReplayDriverPosition.query.filter_by(
+                session_id=session_id,
+                driver_code=market.driver_code
+            ).with_for_update().first()
+
+            if driver_pos and driver_pos.shares >= quantity:
+                # Calculate proportional cost basis to remove
+                cost_per_share = driver_pos.total_cost_basis / driver_pos.shares if driver_pos.shares > 0 else Decimal('0')
+                driver_pos.shares -= quantity
+                driver_pos.total_cost_basis -= cost_per_share * quantity
+                # Ensure no negative values due to rounding
+                if driver_pos.shares < 0:
+                    driver_pos.shares = Decimal('0')
+                if driver_pos.total_cost_basis < 0:
+                    driver_pos.total_cost_basis = Decimal('0')
 
             # Create trade record
             trade = ReplayTrade(

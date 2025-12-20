@@ -6,7 +6,8 @@ from sqlalchemy import func, desc
 from db import db, utc_now, MarketStatus, TransactionType, User
 from db.replay_models import (
     ReplaySession, ReplaySessionStatus, ReplayWallet, ReplayMarket,
-    ReplayPosition, ReplayTrade, ReplayLedgerEntry, ReplayPriceHistory
+    ReplayPosition, ReplayTrade, ReplayLedgerEntry, ReplayPriceHistory,
+    ReplayDifficulty, ReplayDriverPosition, ReplayAIPlayer
 )
 from data.f1_2024 import DRIVERS_2024, RACES_2024, get_race_info, get_points_for_position
 from pricing.bonding_curve import price, buy_cost, sell_payout
@@ -43,7 +44,7 @@ class ReplayService:
     """Service for managing replay sessions."""
 
     @staticmethod
-    def start_replay(user_id: int) -> Dict:
+    def start_replay(user_id: int, difficulty: ReplayDifficulty = ReplayDifficulty.MEDIUM) -> Dict:
         """Start a new replay session for a user.
 
         Creates a new ReplaySession, ReplayWallet with $100 starting balance,
@@ -51,6 +52,7 @@ class ReplayService:
 
         Args:
             user_id: User ID
+            difficulty: Difficulty level (easy, medium, hard)
 
         Returns:
             Dict with session details
@@ -61,6 +63,7 @@ class ReplayService:
                 user_id=user_id,
                 current_race=0,  # Not started yet
                 status=ReplaySessionStatus.ACTIVE,
+                difficulty=difficulty,
                 started_at=utc_now()
             )
             db.session.add(session)
@@ -221,6 +224,7 @@ class ReplayService:
                 "user_id": session.user_id,
                 "current_race": session.current_race,
                 "status": session.status.value,
+                "difficulty": session.difficulty.value,
                 "started_at": session.started_at.isoformat() if session.started_at else None,
                 "completed_at": session.completed_at.isoformat() if session.completed_at else None,
                 "final_balance": float(session.final_balance) if session.final_balance else None
@@ -387,9 +391,16 @@ class ReplayService:
                         })
                         total_payout += payout
 
-                # Update position
-                pos.realized_pnl += payout - (shares * Decimal(str(pos.avg_entry_price)))
-                pos.shares = Decimal('0')  # Position closed after settlement
+                        # Update driver position cumulative payouts
+                        driver_pos = ReplayDriverPosition.query.filter_by(
+                            session_id=session.id,
+                            driver_code=driver_code
+                        ).first()
+                        if driver_pos:
+                            driver_pos.cumulative_payouts += payout
+
+                # Update realized P&L but DO NOT close position - shares carry forward
+                pos.realized_pnl += payout
 
         return {
             "race_number": race_number,
@@ -403,6 +414,8 @@ class ReplayService:
     def _create_race_markets(session: ReplaySession, race_number: int) -> List[ReplayMarket]:
         """Create markets for all 20 drivers for a race.
 
+        Carries forward existing positions from driver positions table.
+
         Args:
             session: ReplaySession object
             race_number: Race number
@@ -411,6 +424,14 @@ class ReplayService:
             List of created ReplayMarket objects
         """
         markets = []
+
+        # Get existing driver positions for carry-forward
+        driver_positions = {
+            dp.driver_code: dp
+            for dp in ReplayDriverPosition.query.filter_by(
+                session_id=session.id
+            ).all()
+        }
 
         for driver in DRIVERS_2024:
             market = ReplayMarket(
@@ -428,14 +449,30 @@ class ReplayService:
 
         db.session.flush()  # Get IDs
 
-        # Create initial price history entries
+        # Create initial price history entries and carry forward positions
         for market in markets:
-            initial_price = price(Decimal('0'), BONDING_A, BONDING_B)
+            driver_pos = driver_positions.get(market.driver_code)
+            initial_supply = Decimal('0')
+
+            if driver_pos and driver_pos.shares > 0:
+                initial_supply = driver_pos.shares
+
+                # Create position record for this market with carried shares
+                position = ReplayPosition(
+                    session_id=session.id,
+                    market_id=market.id,
+                    shares=driver_pos.shares,
+                    avg_entry_price=driver_pos.total_cost_basis / driver_pos.shares if driver_pos.shares > 0 else Decimal('0'),
+                    realized_pnl=Decimal('0')
+                )
+                db.session.add(position)
+
+            initial_price = price(initial_supply, BONDING_A, BONDING_B)
             price_history = ReplayPriceHistory(
                 market_id=market.id,
                 timestamp=utc_now(),
                 price=initial_price,
-                supply=Decimal('0'),
+                supply=initial_supply,
                 reason="initial"
             )
             db.session.add(price_history)
@@ -469,6 +506,7 @@ class ReplayService:
 
             ReplayTrade.query.filter_by(session_id=session_id).delete()
             ReplayPosition.query.filter_by(session_id=session_id).delete()
+            ReplayDriverPosition.query.filter_by(session_id=session_id).delete()
             ReplayLedgerEntry.query.filter_by(session_id=session_id).delete()
             ReplayMarket.query.filter_by(session_id=session_id).delete()
 
@@ -502,17 +540,22 @@ class ReplayService:
             raise
 
     @staticmethod
-    def get_leaderboard(limit: int = 50, user_id: Optional[int] = None) -> Dict:
+    def get_leaderboard(
+        limit: int = 50,
+        user_id: Optional[int] = None,
+        difficulty: Optional[ReplayDifficulty] = None
+    ) -> Dict:
         """Get leaderboard of completed replay sessions.
 
         Args:
             limit: Maximum number of entries to return
             user_id: Optional user ID to include their best score
+            difficulty: Optional difficulty filter
 
         Returns:
             Dict with leaderboard entries and user's best (if provided)
         """
-        # Get top completed sessions by final_balance
+        # Build query for human players
         entries_query = db.session.query(
             ReplaySession, User
         ).join(
@@ -520,46 +563,81 @@ class ReplayService:
         ).filter(
             ReplaySession.status == ReplaySessionStatus.COMPLETED,
             ReplaySession.final_balance.isnot(None)
-        ).order_by(
-            desc(ReplaySession.final_balance)
-        ).limit(limit)
+        )
 
-        entries = []
-        for rank, (session, user) in enumerate(entries_query.all(), 1):
+        if difficulty:
+            entries_query = entries_query.filter(ReplaySession.difficulty == difficulty)
+
+        entries_query = entries_query.order_by(
+            desc(ReplaySession.final_balance)
+        )
+
+        human_entries = []
+        for session, user in entries_query.all():
             final_balance = float(session.final_balance) if session.final_balance else 0
-            entries.append({
-                "rank": rank,
+            human_entries.append({
                 "username": user.username or user.email.split('@')[0],
                 "user_id": user.id,
+                "is_ai": False,
                 "final_balance": final_balance,
-                "return_pct": ((final_balance - 100) / 100) * 100,  # Percentage return
+                "return_pct": ((final_balance - 100) / 100) * 100,
+                "difficulty": session.difficulty.value,
                 "completed_at": session.completed_at.isoformat() if session.completed_at else None
             })
+
+        # Get AI players for this difficulty
+        ai_entries = []
+        if difficulty:
+            ai_players = ReplayAIPlayer.query.filter_by(difficulty=difficulty).all()
+            for player in ai_players:
+                final_balance = float(player.final_balance)
+                ai_entries.append({
+                    "username": player.name,
+                    "user_id": None,
+                    "is_ai": True,
+                    "final_balance": final_balance,
+                    "return_pct": ((final_balance - 100) / 100) * 100,
+                    "difficulty": difficulty.value,
+                    "completed_at": None
+                })
+
+        # Merge and sort all entries by final_balance
+        all_entries = human_entries + ai_entries
+        all_entries.sort(key=lambda x: x["final_balance"], reverse=True)
+
+        # Assign ranks and limit
+        entries = []
+        for rank, entry in enumerate(all_entries[:limit], 1):
+            entry["rank"] = rank
+            entries.append(entry)
 
         # Get user's best if provided
         your_best = None
         if user_id:
-            user_best_session = ReplaySession.query.filter_by(
+            user_best_query = ReplaySession.query.filter_by(
                 user_id=user_id,
                 status=ReplaySessionStatus.COMPLETED
             ).filter(
                 ReplaySession.final_balance.isnot(None)
-            ).order_by(
+            )
+
+            if difficulty:
+                user_best_query = user_best_query.filter(ReplaySession.difficulty == difficulty)
+
+            user_best_session = user_best_query.order_by(
                 desc(ReplaySession.final_balance)
             ).first()
 
             if user_best_session:
-                # Find their rank
-                rank_count = ReplaySession.query.filter(
-                    ReplaySession.status == ReplaySessionStatus.COMPLETED,
-                    ReplaySession.final_balance > user_best_session.final_balance
-                ).count() + 1
-
+                # Count entries with higher balance (including AI)
                 final_balance = float(user_best_session.final_balance)
+                higher_count = sum(1 for e in all_entries if e["final_balance"] > final_balance)
+
                 your_best = {
-                    "rank": rank_count,
+                    "rank": higher_count + 1,
                     "final_balance": final_balance,
                     "return_pct": ((final_balance - 100) / 100) * 100,
+                    "difficulty": user_best_session.difficulty.value,
                     "completed_at": user_best_session.completed_at.isoformat() if user_best_session.completed_at else None
                 }
 

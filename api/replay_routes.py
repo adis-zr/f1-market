@@ -10,6 +10,8 @@ from services.replay_service import (
     ReplayInsufficientSharesError
 )
 from services.replay_market_service import ReplayMarketService
+from services.replay_ai_service import ReplayAIService
+from db.replay_models import ReplayDifficulty
 from data.f1_2024 import RACES_2024, get_race_info
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,9 @@ def start_replay():
 
     Creates a new replay session with $100 starting balance.
     If user already has an active session, returns that session.
+
+    Request body (optional):
+        difficulty: "easy" | "medium" | "hard" (default: "medium")
     """
     user_id = get_current_user_id()
     if not user_id:
@@ -55,8 +60,20 @@ def start_replay():
         if existing:
             return jsonify(ReplayService.get_session_state(existing.id)), 200
 
+        # Parse difficulty from request
+        data = request.get_json() or {}
+        difficulty_str = data.get('difficulty', 'medium').lower()
+
+        try:
+            difficulty = ReplayDifficulty(difficulty_str)
+        except ValueError:
+            return jsonify({'error': f'Invalid difficulty. Use: easy, medium, hard'}), 400
+
+        # Ensure AI players exist
+        ReplayAIService.ensure_ai_players_exist()
+
         # Create new session
-        state = ReplayService.start_replay(user_id)
+        state = ReplayService.start_replay(user_id, difficulty=difficulty)
         return jsonify(state), 201
 
     except Exception as e:
@@ -513,14 +530,32 @@ def get_race_results(race_number):
 
 @bp.route('/leaderboard', methods=['GET'])
 def get_leaderboard():
-    """Get leaderboard of completed replays."""
+    """Get leaderboard of completed replays.
+
+    Query params:
+        limit: Maximum entries (default 50, max 100)
+        difficulty: Filter by difficulty ("easy", "medium", "hard")
+    """
     user_id = get_current_user_id()
 
     try:
         limit = request.args.get('limit', default=50, type=int)
         limit = max(1, min(limit, 100))
 
-        result = ReplayService.get_leaderboard(limit=limit, user_id=user_id)
+        # Parse difficulty filter
+        difficulty_str = request.args.get('difficulty', default=None, type=str)
+        difficulty = None
+        if difficulty_str:
+            try:
+                difficulty = ReplayDifficulty(difficulty_str.lower())
+            except ValueError:
+                return jsonify({'error': f'Invalid difficulty. Use: easy, medium, hard'}), 400
+
+        result = ReplayService.get_leaderboard(
+            limit=limit,
+            user_id=user_id,
+            difficulty=difficulty
+        )
         return jsonify(result), 200
 
     except Exception as e:
