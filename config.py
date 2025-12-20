@@ -29,7 +29,9 @@ def create_app_config(app: Flask) -> None:
         app.config['SECRET_KEY'] = secret_key or secrets.token_hex(32)
 
     app.config['SESSION_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    # SameSite=None required for cross-origin requests (frontend at gridstock.io, API at onrender.com)
+    # Secure=True is required when SameSite=None
+    app.config['SESSION_COOKIE_SAMESITE'] = 'None' if env == 'production' else 'Lax'
     app.config['SESSION_COOKIE_SECURE'] = env == 'production'
 
     # CSRF configuration
