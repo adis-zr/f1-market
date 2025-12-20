@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { useReplay, useStartReplay, useReplayLeaderboard } from '@/hooks';
 import { formatPrice } from '@/lib/formatters';
-import { Play, Trophy, RefreshCw, TrendingUp, Users, Bot } from 'lucide-react';
+import { Play, Trophy, RefreshCw, TrendingUp, Bot } from 'lucide-react';
 import type { ReplayDifficulty } from '@/api/types';
 import { cn } from '@/lib/utils';
 

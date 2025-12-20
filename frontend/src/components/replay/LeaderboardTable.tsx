@@ -99,7 +99,9 @@ export function LeaderboardTable({
                       <span className="flex items-center gap-2">
                         {entry.username}
                         {entry.is_ai && (
-                          <Bot className="h-4 w-4 text-muted-foreground" title="AI Player" />
+                          <span title="AI Player">
+                            <Bot className="h-4 w-4 text-muted-foreground" />
+                          </span>
                         )}
                       </span>
                     </td>
