@@ -8,6 +8,7 @@ Create Date: 2025-12-20
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import text
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -15,6 +16,11 @@ revision = 'e2f3a4b5c6d7'
 down_revision = 'd1e2f3a4b5c6'
 branch_labels = None
 depends_on = None
+
+
+# Define the enum outside functions so it can be reused
+# Use postgresql.ENUM with create_type=False to prevent auto-creation
+replaydifficulty_enum = postgresql.ENUM('easy', 'medium', 'hard', name='replaydifficulty', create_type=False)
 
 
 def upgrade():
@@ -36,7 +42,7 @@ def upgrade():
     """))
     if result.fetchone() is None:
         op.add_column('replay_sessions',
-            sa.Column('difficulty', sa.Enum('easy', 'medium', 'hard', name='replaydifficulty', create_type=False),
+            sa.Column('difficulty', replaydifficulty_enum,
                       nullable=False, server_default='medium'))
 
     # Create index if not exists
@@ -56,7 +62,7 @@ def upgrade():
         op.create_table('replay_ai_players',
             sa.Column('id', sa.Integer(), nullable=False),
             sa.Column('name', sa.String(length=100), nullable=False),
-            sa.Column('difficulty', sa.Enum('easy', 'medium', 'hard', name='replaydifficulty', create_type=False), nullable=False),
+            sa.Column('difficulty', replaydifficulty_enum, nullable=False),
             sa.Column('final_balance', sa.Numeric(precision=18, scale=8), nullable=False),
             sa.Column('strategy_type', sa.String(length=50), nullable=False),
             sa.PrimaryKeyConstraint('id')
