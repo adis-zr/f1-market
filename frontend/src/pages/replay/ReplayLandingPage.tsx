@@ -8,7 +8,7 @@ import { Play, Trophy, RefreshCw, TrendingUp } from 'lucide-react';
 
 export function ReplayLandingPage() {
   const navigate = useNavigate();
-  const { hasActiveSession, session, currentRace, isLoading } = useReplay();
+  const { hasActiveSession, currentRace, isLoading } = useReplay();
   const startReplay = useStartReplay();
   const { data: leaderboard } = useReplayLeaderboard(10);
 

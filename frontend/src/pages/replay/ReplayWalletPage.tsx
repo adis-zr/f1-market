@@ -3,12 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useReplayWallet, useReplayLedger } from '@/hooks';
 import { formatPrice, formatDateTime } from '@/lib/formatters';
+import type { ReplayLedgerEntry } from '@/api/types';
 
 export function ReplayWalletPage() {
   const { data: wallet, isLoading: walletLoading } = useReplayWallet();
-  const { data: ledgerData, isLoading: ledgerLoading } = useReplayLedger();
-
-  const ledger = ledgerData?.ledger || [];
+  const { data: ledger = [], isLoading: ledgerLoading } = useReplayLedger();
 
   if (walletLoading) {
     return (
@@ -103,7 +102,7 @@ export function ReplayWalletPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ledger.map((entry) => {
+                  {ledger.map((entry: ReplayLedgerEntry) => {
                     const isPositive = entry.amount > 0;
 
                     return (

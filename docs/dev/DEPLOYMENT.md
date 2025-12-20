@@ -233,17 +233,27 @@ These are configured automatically in `config.py` when `FLASK_ENV=production`.
 
 ## Database Initialization
 
-After first deployment, the database needs initialization:
+After first deployment, the database needs initialization.
 
-### Automatic (Flask-Migrate)
+### Running Migrations
 
-Tables are created automatically on first request if using Flask-Migrate.
+Database migrations must be run manually on Render's free tier (preDeployCommand is not supported):
 
-### Manual (via Render Shell)
-
-1. Go to your backend service in Render
-2. Click **Shell** tab
+1. Go to your backend service in Render Dashboard
+2. Click the **Shell** tab
 3. Run:
+
+```bash
+flask db upgrade
+```
+
+This applies all pending migrations to create/update database tables.
+
+**Important:** Run `flask db upgrade` after every deploy that includes new migrations.
+
+### Initial Setup (via Render Shell)
+
+For first-time setup, also run:
 
 ```bash
 python db/init.py

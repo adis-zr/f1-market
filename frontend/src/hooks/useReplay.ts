@@ -7,13 +7,7 @@ import type {
   ReplayBuyResponse,
   ReplaySellResponse,
   ReplayEstimateResponse,
-  ReplayMarket,
-  ReplayPosition,
-  ReplayRace,
   ReplayLeaderboard,
-  ReplayPriceHistoryEntry,
-  ReplayLedgerEntry,
-  ReplayPnL,
 } from '@/api/types';
 
 // Query key factory for replay cache management

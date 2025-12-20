@@ -29,7 +29,6 @@ import {
 export function ReplayDashboardPage() {
   const navigate = useNavigate();
   const {
-    session,
     wallet,
     currentRaceInfo,
     markets,
