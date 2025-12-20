@@ -34,7 +34,10 @@ def create_app_config(app: Flask) -> None:
 
     # CSRF configuration
     app.config['WTF_CSRF_TIME_LIMIT'] = CSRF_TOKEN_EXPIRY_SECONDS
-    app.config['WTF_CSRF_SSL_STRICT'] = env == 'production'
+    # Disable SSL strict mode - the Referer check fails for cross-origin requests
+    # (frontend at gridstock.io, API at f1-market-api.onrender.com)
+    # The CSRF token itself provides protection
+    app.config['WTF_CSRF_SSL_STRICT'] = False
 
     # Database configuration
     if env == 'production':
