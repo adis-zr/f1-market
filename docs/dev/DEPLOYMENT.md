@@ -237,19 +237,15 @@ After first deployment, the database needs initialization.
 
 ### Running Migrations
 
-Database migrations must be run manually on Render's free tier (preDeployCommand is not supported):
+Migrations run automatically on deploy via the `preDeployCommand` in `render.yaml`:
 
-1. Go to your backend service in Render Dashboard
-2. Click the **Shell** tab
-3. Run:
-
-```bash
-flask db upgrade
+```yaml
+preDeployCommand: flask db upgrade
 ```
 
-This applies all pending migrations to create/update database tables.
+This applies all pending migrations before the new version goes live.
 
-**Important:** Run `flask db upgrade` after every deploy that includes new migrations.
+**Note:** This requires a paid tier (Starter or above). On the free tier, run migrations manually via Render Shell.
 
 ### Initial Setup (via Render Shell)
 

@@ -8,9 +8,9 @@ services:
     name: f1-market-api
     env: python
     region: oregon  # Change to your preferred region
-    plan: free  # or starter, standard, etc.
+    plan: starter
     buildCommand: pip install -r requirements.txt
-    # Note: preDeployCommand requires paid tier. Run `flask db upgrade` manually via Render Shell after deploy.
+    preDeployCommand: flask db upgrade
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     envVars:
       - key: FLASK_ENV
