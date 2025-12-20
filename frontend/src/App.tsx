@@ -10,6 +10,15 @@ import { EventsPage } from './pages/EventsPage';
 import { EventDetailPage } from './pages/EventDetailPage';
 import { PortfolioPage } from './pages/PortfolioPage';
 import { WalletPage } from './pages/WalletPage';
+import {
+  ReplayLandingPage,
+  ReplayDashboardPage,
+  ReplayMarketDetailPage,
+  ReplayPortfolioPage,
+  ReplayWalletPage,
+  ReplayCompletePage,
+  ReplayLeaderboardPage,
+} from './pages/replay';
 import { ToastContainer } from './components/ui/toast';
 import { onUnauthorized } from './api/client';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -49,6 +58,14 @@ function App() {
               <Route path="events/:eventId" element={<EventDetailPage />} />
               <Route path="portfolio" element={<PortfolioPage />} />
               <Route path="wallet" element={<WalletPage />} />
+              {/* Replay Mode Routes */}
+              <Route path="replay" element={<ReplayLandingPage />} />
+              <Route path="replay/dashboard" element={<ReplayDashboardPage />} />
+              <Route path="replay/markets/:marketId" element={<ReplayMarketDetailPage />} />
+              <Route path="replay/portfolio" element={<ReplayPortfolioPage />} />
+              <Route path="replay/wallet" element={<ReplayWalletPage />} />
+              <Route path="replay/complete" element={<ReplayCompletePage />} />
+              <Route path="replay/leaderboard" element={<ReplayLeaderboardPage />} />
             </Route>
           </Route>
         </Routes>

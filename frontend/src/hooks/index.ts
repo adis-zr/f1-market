@@ -25,6 +25,28 @@ export {
 // Trading mutations
 export { useBuyShares, useSellShares } from './useTrading';
 
+// Replay mode
+export {
+  replayQueryKeys,
+  useReplaySession,
+  useReplayMarkets,
+  useReplayMarket,
+  useReplayPortfolio,
+  useReplayWallet,
+  useReplayLedger,
+  useReplayRaces,
+  useReplayRaceResults,
+  useReplayPriceHistory,
+  useReplayLeaderboard,
+  useStartReplay,
+  useAdvanceRace,
+  useResetReplay,
+  useReplayBuyShares,
+  useReplaySellShares,
+  useReplayEstimateCost,
+  useReplay,
+} from './useReplay';
+
 // UI
 export { useToast } from './useToast';
 

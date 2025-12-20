@@ -15,6 +15,19 @@ import type {
   SellSharesRequest,
   BuySharesResponse,
   SellSharesResponse,
+  ReplayState,
+  ReplayAdvanceResponse,
+  ReplayBuyResponse,
+  ReplaySellResponse,
+  ReplayEstimateResponse,
+  ReplayMarket,
+  ReplayPosition,
+  ReplayRace,
+  ReplayRaceResult,
+  ReplayLeaderboard,
+  ReplayPriceHistoryEntry,
+  ReplayLedgerEntry,
+  ReplayPnL,
 } from './types';
 
 // Generic fetch helpers
@@ -87,4 +100,53 @@ export const portfolioApi = {
   getPortfolio: () => get<Position[]>('/api/portfolio'),
   getWallet: () => get<Wallet>('/api/wallet'),
   getLedger: (params?: { limit?: number; type?: string }) => get<LedgerEntry[]>('/api/wallet/ledger', params),
+};
+
+// =============================================================================
+// Replay Mode API
+// =============================================================================
+
+export const replayApi = {
+  // Session management
+  startReplay: () => post<ReplayState>('/api/replay/start'),
+  getSession: () => get<ReplayState>('/api/replay/session'),
+  resetReplay: () => post<ReplayState>('/api/replay/reset'),
+
+  // Race progression
+  advanceRace: () => post<ReplayAdvanceResponse>('/api/replay/advance'),
+
+  // Markets
+  getMarkets: () => get<{ markets: ReplayMarket[] }>('/api/replay/markets'),
+  getMarket: (marketId: number) =>
+    get<{ market: ReplayMarket; position: ReplayPosition | null }>(`/api/replay/markets/${marketId}`),
+  buyShares: (marketId: number, quantity: number) =>
+    post<ReplayBuyResponse>(`/api/replay/markets/${marketId}/buy`, { quantity }),
+  sellShares: (marketId: number, quantity: number) =>
+    post<ReplaySellResponse>(`/api/replay/markets/${marketId}/sell`, { quantity }),
+  estimateCost: (marketId: number, quantity: number, side: 'buy' | 'sell') =>
+    post<ReplayEstimateResponse>(`/api/replay/markets/${marketId}/estimate`, { quantity, side }),
+  getPriceHistory: (marketId: number, limit = 100) =>
+    get<{ market_id: number; history: ReplayPriceHistoryEntry[] }>(
+      `/api/replay/markets/${marketId}/price-history`,
+      { limit }
+    ),
+
+  // Portfolio & Wallet
+  getPortfolio: () => get<{ positions: ReplayPosition[]; total_pnl: ReplayPnL }>('/api/replay/portfolio'),
+  getWallet: () => get<{ balance: number; locked_balance: number }>('/api/replay/wallet'),
+  getLedger: (limit = 100) => get<{ ledger: ReplayLedgerEntry[] }>('/api/replay/wallet/ledger', { limit }),
+
+  // Race info
+  getRaces: () => get<{ races: ReplayRace[] }>('/api/replay/races'),
+  getRaceResults: (raceNumber: number) =>
+    get<{
+      race_number: number;
+      name: string;
+      venue: string;
+      date: string;
+      results: ReplayRaceResult[];
+    }>(`/api/replay/races/${raceNumber}/results`),
+
+  // Leaderboard
+  getLeaderboard: (limit = 50) => get<ReplayLeaderboard>('/api/replay/leaderboard', { limit }),
 };

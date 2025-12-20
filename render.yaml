@@ -10,6 +10,7 @@ services:
     region: oregon  # Change to your preferred region
     plan: free  # or starter, standard, etc.
     buildCommand: pip install -r requirements.txt
+    preDeployCommand: flask db upgrade
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     envVars:
       - key: FLASK_ENV

@@ -182,3 +182,180 @@ export interface SellSharesResponse {
   trade_id: number;
 }
 
+// =============================================================================
+// Replay Mode Types
+// =============================================================================
+
+export interface ReplaySession {
+  session_id: number;
+  user_id: number;
+  current_race: number; // 0-24
+  status: 'active' | 'completed' | 'abandoned';
+  started_at: string | null;
+  completed_at: string | null;
+  final_balance: number | null;
+}
+
+export interface ReplayWallet {
+  balance: number;
+  locked_balance: number;
+}
+
+export interface ReplayRace {
+  race_number: number;
+  name: string;
+  venue: string;
+  date: string;
+  status: 'upcoming' | 'current' | 'completed';
+}
+
+export interface ReplayMarket {
+  market_id: number;
+  race_number: number;
+  driver_code: string;
+  driver_name: string;
+  team_name: string | null;
+  status: 'open' | 'closed' | 'settled';
+  current_price: number;
+  current_supply: number;
+  settlement_price: number | null;
+  payout_per_share: number | null;
+}
+
+export interface ReplayPosition {
+  position_id: number;
+  market_id: number;
+  driver_code: string;
+  driver_name: string;
+  race_number: number;
+  shares: number;
+  avg_entry_price: number;
+  current_price: number;
+  unrealized_pnl: number;
+  realized_pnl: number;
+}
+
+export interface ReplayPnL {
+  realized: number;
+  unrealized: number;
+  total: number;
+}
+
+export interface ReplayState {
+  session: ReplaySession;
+  wallet: ReplayWallet;
+  current_race_info: ReplayRace | null;
+  markets: ReplayMarket[];
+  positions: ReplayPosition[];
+  total_pnl: ReplayPnL;
+  all_races: ReplayRace[];
+}
+
+export interface ReplayRaceResult {
+  driver_code: string;
+  driver_name: string;
+  team: string | null;
+  position: number;
+  points: number;
+}
+
+export interface ReplaySettlementPayout {
+  driver_code: string;
+  shares: number;
+  payout: number;
+}
+
+export interface ReplaySettlementSummary {
+  race_number: number;
+  race_name: string;
+  results: Array<{
+    driver_code: string;
+    driver_name: string;
+    position: number;
+    points: number;
+    payout_per_share: number;
+  }>;
+  your_payouts: ReplaySettlementPayout[];
+  total_payout: number;
+}
+
+export interface ReplayAdvanceResponse {
+  settlement_summary: ReplaySettlementSummary | null;
+  new_state: ReplayState;
+}
+
+export interface ReplayBuyResponse {
+  success: boolean;
+  market_id: number;
+  driver_code: string;
+  quantity: number;
+  cost: number;
+  price_per_share: number;
+  new_supply: number;
+  new_price: number;
+  position_shares: number;
+  new_balance: number;
+  trade_id: number;
+}
+
+export interface ReplaySellResponse {
+  success: boolean;
+  market_id: number;
+  driver_code: string;
+  quantity: number;
+  payout: number;
+  price_per_share: number;
+  realized_pnl: number;
+  new_supply: number;
+  new_price: number;
+  remaining_shares: number;
+  new_balance: number;
+  trade_id: number;
+}
+
+export interface ReplayEstimateResponse {
+  side: 'buy' | 'sell';
+  quantity: number;
+  cost?: number;
+  payout?: number;
+  price_per_share: number;
+  current_supply: number;
+  new_supply: number;
+  current_price: number;
+  new_price: number;
+}
+
+export interface ReplayLeaderboardEntry {
+  rank: number;
+  username: string;
+  user_id: number;
+  final_balance: number;
+  return_pct: number;
+  completed_at: string | null;
+}
+
+export interface ReplayLeaderboard {
+  entries: ReplayLeaderboardEntry[];
+  your_best: {
+    rank: number;
+    final_balance: number;
+    return_pct: number;
+    completed_at: string | null;
+  } | null;
+}
+
+export interface ReplayPriceHistoryEntry {
+  timestamp: string;
+  price: number;
+  supply: number;
+  reason: string | null;
+}
+
+export interface ReplayLedgerEntry {
+  id: number;
+  amount: number;
+  transaction_type: 'deposit' | 'withdrawal' | 'buy' | 'sell' | 'settlement' | 'fee';
+  description: string | null;
+  created_at: string | null;
+}
+

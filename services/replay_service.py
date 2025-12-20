@@ -1,0 +1,588 @@
+"""Replay service for managing replay sessions and operations."""
+from decimal import Decimal
+from typing import Dict, List, Optional
+from sqlalchemy import func, desc
+
+from db import db, utc_now, MarketStatus, TransactionType, User
+from db.replay_models import (
+    ReplaySession, ReplaySessionStatus, ReplayWallet, ReplayMarket,
+    ReplayPosition, ReplayTrade, ReplayLedgerEntry, ReplayPriceHistory
+)
+from data.f1_2024 import DRIVERS_2024, RACES_2024, get_race_info, get_points_for_position
+from pricing.bonding_curve import price, buy_cost, sell_payout
+
+
+# Constants
+INITIAL_BALANCE = Decimal('100')
+BONDING_A = Decimal('0.1')  # Bonding curve slope
+BONDING_B = Decimal('0.5')  # Bonding curve baseline
+TOTAL_RACES = 24
+
+
+class ReplaySessionNotFoundError(Exception):
+    """Raised when replay session is not found."""
+    pass
+
+
+class ReplayMarketClosedError(Exception):
+    """Raised when trying to trade on a closed replay market."""
+    pass
+
+
+class ReplayInsufficientBalanceError(Exception):
+    """Raised when user doesn't have enough replay balance."""
+    pass
+
+
+class ReplayInsufficientSharesError(Exception):
+    """Raised when user doesn't have enough shares to sell."""
+    pass
+
+
+class ReplayService:
+    """Service for managing replay sessions."""
+
+    @staticmethod
+    def start_replay(user_id: int) -> Dict:
+        """Start a new replay session for a user.
+
+        Creates a new ReplaySession, ReplayWallet with $100 starting balance,
+        and an initial ledger entry.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Dict with session details
+        """
+        try:
+            # Create new replay session
+            session = ReplaySession(
+                user_id=user_id,
+                current_race=0,  # Not started yet
+                status=ReplaySessionStatus.ACTIVE,
+                started_at=utc_now()
+            )
+            db.session.add(session)
+            db.session.flush()  # Get session ID
+
+            # Create wallet with initial balance
+            wallet = ReplayWallet(
+                session_id=session.id,
+                balance=INITIAL_BALANCE,
+                locked_balance=Decimal('0')
+            )
+            db.session.add(wallet)
+
+            # Create initial ledger entry (deposit)
+            ledger_entry = ReplayLedgerEntry(
+                session_id=session.id,
+                amount=INITIAL_BALANCE,
+                transaction_type=TransactionType.DEPOSIT,
+                description="Initial replay balance"
+            )
+            db.session.add(ledger_entry)
+
+            db.session.commit()
+
+            return ReplayService.get_session_state(session.id)
+
+        except Exception as e:
+            db.session.rollback()
+            raise
+
+    @staticmethod
+    def get_active_session(user_id: int) -> Optional[ReplaySession]:
+        """Get user's active replay session, if any.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            ReplaySession or None
+        """
+        return ReplaySession.query.filter_by(
+            user_id=user_id,
+            status=ReplaySessionStatus.ACTIVE
+        ).first()
+
+    @staticmethod
+    def get_session_state(session_id: int) -> Dict:
+        """Get complete state of a replay session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Dict with full session state
+
+        Raises:
+            ReplaySessionNotFoundError: If session not found
+        """
+        session = db.session.get(ReplaySession, session_id)
+        if not session:
+            raise ReplaySessionNotFoundError(f"Session {session_id} not found")
+
+        wallet = session.wallet
+
+        # Get current race info
+        current_race_info = None
+        if session.current_race > 0:
+            race_data = get_race_info(session.current_race)
+            if race_data:
+                current_race_info = {
+                    "race_number": session.current_race,
+                    "name": race_data["name"],
+                    "venue": race_data["venue"],
+                    "date": race_data["date"],
+                    "status": "current" if session.status == ReplaySessionStatus.ACTIVE else "completed"
+                }
+
+        # Get current race markets
+        markets = []
+        if session.current_race > 0:
+            market_records = ReplayMarket.query.filter_by(
+                session_id=session_id,
+                race_number=session.current_race
+            ).order_by(ReplayMarket.driver_code).all()
+
+            for market in market_records:
+                supply = ReplayService._get_market_supply(market.id)
+                current_price = price(supply, Decimal(str(market.a)), Decimal(str(market.b)))
+                markets.append({
+                    "market_id": market.id,
+                    "race_number": market.race_number,
+                    "driver_code": market.driver_code,
+                    "driver_name": market.driver_name,
+                    "team_name": market.team_name,
+                    "status": market.status.value,
+                    "current_price": float(current_price),
+                    "current_supply": float(supply),
+                    "settlement_price": float(market.settlement_price) if market.settlement_price else None,
+                    "payout_per_share": float(market.payout_per_share) if market.payout_per_share else None
+                })
+
+        # Get all positions with non-zero shares
+        positions = []
+        position_records = ReplayPosition.query.filter(
+            ReplayPosition.session_id == session_id,
+            ReplayPosition.shares > 0
+        ).all()
+
+        for pos in position_records:
+            market = db.session.get(ReplayMarket, pos.market_id)
+            if market:
+                supply = ReplayService._get_market_supply(market.id)
+                current_price = price(supply, Decimal(str(market.a)), Decimal(str(market.b)))
+                shares = Decimal(str(pos.shares))
+                avg_entry = Decimal(str(pos.avg_entry_price))
+                unrealized_pnl = (current_price - avg_entry) * shares
+
+                positions.append({
+                    "position_id": pos.id,
+                    "market_id": pos.market_id,
+                    "driver_code": market.driver_code,
+                    "driver_name": market.driver_name,
+                    "race_number": market.race_number,
+                    "shares": float(pos.shares),
+                    "avg_entry_price": float(pos.avg_entry_price),
+                    "current_price": float(current_price),
+                    "unrealized_pnl": float(unrealized_pnl),
+                    "realized_pnl": float(pos.realized_pnl)
+                })
+
+        # Calculate total P&L
+        total_realized_pnl = sum(p["realized_pnl"] for p in positions)
+        total_unrealized_pnl = sum(p["unrealized_pnl"] for p in positions)
+
+        # Get all races info
+        all_races = []
+        for race_num in range(1, TOTAL_RACES + 1):
+            race_data = get_race_info(race_num)
+            if race_data:
+                if race_num < session.current_race:
+                    status = "completed"
+                elif race_num == session.current_race:
+                    status = "current"
+                else:
+                    status = "upcoming"
+
+                all_races.append({
+                    "race_number": race_num,
+                    "name": race_data["name"],
+                    "venue": race_data["venue"],
+                    "date": race_data["date"],
+                    "status": status
+                })
+
+        return {
+            "session": {
+                "session_id": session.id,
+                "user_id": session.user_id,
+                "current_race": session.current_race,
+                "status": session.status.value,
+                "started_at": session.started_at.isoformat() if session.started_at else None,
+                "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+                "final_balance": float(session.final_balance) if session.final_balance else None
+            },
+            "wallet": {
+                "balance": float(wallet.balance) if wallet else 0,
+                "locked_balance": float(wallet.locked_balance) if wallet else 0
+            },
+            "current_race_info": current_race_info,
+            "markets": markets,
+            "positions": positions,
+            "total_pnl": {
+                "realized": total_realized_pnl,
+                "unrealized": total_unrealized_pnl,
+                "total": total_realized_pnl + total_unrealized_pnl
+            },
+            "all_races": all_races
+        }
+
+    @staticmethod
+    def advance_to_next_race(session_id: int) -> Dict:
+        """Advance to the next race.
+
+        If current_race > 0, settles the current race first using historical results.
+        Then increments current_race and creates markets for the new race.
+        If current_race > 24, marks session as COMPLETED.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Dict with settlement summary (if applicable) and new session state
+
+        Raises:
+            ReplaySessionNotFoundError: If session not found
+        """
+        try:
+            session = ReplaySession.query.filter_by(id=session_id).with_for_update().first()
+            if not session:
+                raise ReplaySessionNotFoundError(f"Session {session_id} not found")
+
+            if session.status != ReplaySessionStatus.ACTIVE:
+                raise ValueError(f"Session is not active (status: {session.status.value})")
+
+            settlement_summary = None
+
+            # If we have a current race, settle it first
+            if session.current_race > 0:
+                settlement_summary = ReplayService._settle_race(session, session.current_race)
+
+            # Advance to next race
+            session.current_race += 1
+
+            if session.current_race <= TOTAL_RACES:
+                # Create markets for new race
+                ReplayService._create_race_markets(session, session.current_race)
+            else:
+                # Season complete
+                session.status = ReplaySessionStatus.COMPLETED
+                session.completed_at = utc_now()
+                # Cache final balance for leaderboard
+                wallet = session.wallet
+                if wallet:
+                    session.final_balance = wallet.balance
+
+            db.session.commit()
+
+            return {
+                "settlement_summary": settlement_summary,
+                "new_state": ReplayService.get_session_state(session_id)
+            }
+
+        except Exception as e:
+            db.session.rollback()
+            raise
+
+    @staticmethod
+    def _settle_race(session: ReplaySession, race_number: int) -> Dict:
+        """Settle all markets for a race using historical results.
+
+        Args:
+            session: ReplaySession object
+            race_number: Race number to settle
+
+        Returns:
+            Dict with settlement summary
+        """
+        race_data = get_race_info(race_number)
+        if not race_data:
+            raise ValueError(f"Race {race_number} data not found")
+
+        # Build results lookup: driver_code -> position
+        results_lookup = {code: pos for code, pos in race_data["results"]}
+
+        # Get all markets for this race
+        markets = ReplayMarket.query.filter_by(
+            session_id=session.id,
+            race_number=race_number,
+            status=MarketStatus.OPEN
+        ).with_for_update().all()
+
+        settlement_results = []
+        user_payouts = []
+        total_payout = Decimal('0')
+
+        for market in markets:
+            driver_code = market.driver_code
+            position = results_lookup.get(driver_code, 0)  # 0 = DNF
+
+            # Get points for position
+            points = get_points_for_position(position)
+
+            # Settlement price = points earned
+            market.settlement_price = points
+
+            # Payout per share = points (simple 1:1 for now)
+            payout_per_share = points
+            market.payout_per_share = payout_per_share
+            market.status = MarketStatus.SETTLED
+
+            settlement_results.append({
+                "driver_code": driver_code,
+                "driver_name": market.driver_name,
+                "position": position,
+                "points": float(points),
+                "payout_per_share": float(payout_per_share)
+            })
+
+            # Process positions for this market
+            positions = ReplayPosition.query.filter(
+                ReplayPosition.session_id == session.id,
+                ReplayPosition.market_id == market.id,
+                ReplayPosition.shares > 0
+            ).with_for_update().all()
+
+            for pos in positions:
+                shares = Decimal(str(pos.shares))
+                payout = shares * payout_per_share
+
+                if payout > 0:
+                    # Credit wallet
+                    wallet = ReplayWallet.query.filter_by(
+                        session_id=session.id
+                    ).with_for_update().first()
+
+                    if wallet:
+                        wallet.balance += payout
+
+                        # Create ledger entry
+                        ledger = ReplayLedgerEntry(
+                            session_id=session.id,
+                            amount=payout,
+                            transaction_type=TransactionType.SETTLEMENT,
+                            reference_type="market",
+                            reference_id=market.id,
+                            description=f"Settlement: {driver_code} P{position} - {float(shares)} shares @ {float(payout_per_share)} pts"
+                        )
+                        db.session.add(ledger)
+
+                        user_payouts.append({
+                            "driver_code": driver_code,
+                            "shares": float(shares),
+                            "payout": float(payout)
+                        })
+                        total_payout += payout
+
+                # Update position
+                pos.realized_pnl += payout - (shares * Decimal(str(pos.avg_entry_price)))
+                pos.shares = Decimal('0')  # Position closed after settlement
+
+        return {
+            "race_number": race_number,
+            "race_name": race_data["name"],
+            "results": settlement_results,
+            "your_payouts": user_payouts,
+            "total_payout": float(total_payout)
+        }
+
+    @staticmethod
+    def _create_race_markets(session: ReplaySession, race_number: int) -> List[ReplayMarket]:
+        """Create markets for all 20 drivers for a race.
+
+        Args:
+            session: ReplaySession object
+            race_number: Race number
+
+        Returns:
+            List of created ReplayMarket objects
+        """
+        markets = []
+
+        for driver in DRIVERS_2024:
+            market = ReplayMarket(
+                session_id=session.id,
+                race_number=race_number,
+                driver_code=driver["code"],
+                driver_name=driver["name"],
+                team_name=driver["team"],
+                status=MarketStatus.OPEN,
+                a=BONDING_A,
+                b=BONDING_B
+            )
+            db.session.add(market)
+            markets.append(market)
+
+        db.session.flush()  # Get IDs
+
+        # Create initial price history entries
+        for market in markets:
+            initial_price = price(Decimal('0'), BONDING_A, BONDING_B)
+            price_history = ReplayPriceHistory(
+                market_id=market.id,
+                timestamp=utc_now(),
+                price=initial_price,
+                supply=Decimal('0'),
+                reason="initial"
+            )
+            db.session.add(price_history)
+
+        return markets
+
+    @staticmethod
+    def reset_replay(session_id: int) -> Dict:
+        """Reset a replay session to start fresh.
+
+        Deletes all trades, positions, ledger entries, markets.
+        Resets wallet to $100 and current_race to 0.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Fresh session state
+        """
+        try:
+            session = ReplaySession.query.filter_by(id=session_id).with_for_update().first()
+            if not session:
+                raise ReplaySessionNotFoundError(f"Session {session_id} not found")
+
+            # Delete all related data (cascades handle most of this)
+            ReplayPriceHistory.query.filter(
+                ReplayPriceHistory.market_id.in_(
+                    db.session.query(ReplayMarket.id).filter_by(session_id=session_id)
+                )
+            ).delete(synchronize_session=False)
+
+            ReplayTrade.query.filter_by(session_id=session_id).delete()
+            ReplayPosition.query.filter_by(session_id=session_id).delete()
+            ReplayLedgerEntry.query.filter_by(session_id=session_id).delete()
+            ReplayMarket.query.filter_by(session_id=session_id).delete()
+
+            # Reset wallet
+            wallet = session.wallet
+            if wallet:
+                wallet.balance = INITIAL_BALANCE
+                wallet.locked_balance = Decimal('0')
+
+            # Reset session
+            session.current_race = 0
+            session.status = ReplaySessionStatus.ACTIVE
+            session.completed_at = None
+            session.final_balance = None
+
+            # Create new initial ledger entry
+            ledger_entry = ReplayLedgerEntry(
+                session_id=session.id,
+                amount=INITIAL_BALANCE,
+                transaction_type=TransactionType.DEPOSIT,
+                description="Initial replay balance (reset)"
+            )
+            db.session.add(ledger_entry)
+
+            db.session.commit()
+
+            return ReplayService.get_session_state(session_id)
+
+        except Exception as e:
+            db.session.rollback()
+            raise
+
+    @staticmethod
+    def get_leaderboard(limit: int = 50, user_id: Optional[int] = None) -> Dict:
+        """Get leaderboard of completed replay sessions.
+
+        Args:
+            limit: Maximum number of entries to return
+            user_id: Optional user ID to include their best score
+
+        Returns:
+            Dict with leaderboard entries and user's best (if provided)
+        """
+        # Get top completed sessions by final_balance
+        entries_query = db.session.query(
+            ReplaySession, User
+        ).join(
+            User, ReplaySession.user_id == User.id
+        ).filter(
+            ReplaySession.status == ReplaySessionStatus.COMPLETED,
+            ReplaySession.final_balance.isnot(None)
+        ).order_by(
+            desc(ReplaySession.final_balance)
+        ).limit(limit)
+
+        entries = []
+        for rank, (session, user) in enumerate(entries_query.all(), 1):
+            final_balance = float(session.final_balance) if session.final_balance else 0
+            entries.append({
+                "rank": rank,
+                "username": user.username or user.email.split('@')[0],
+                "user_id": user.id,
+                "final_balance": final_balance,
+                "return_pct": ((final_balance - 100) / 100) * 100,  # Percentage return
+                "completed_at": session.completed_at.isoformat() if session.completed_at else None
+            })
+
+        # Get user's best if provided
+        your_best = None
+        if user_id:
+            user_best_session = ReplaySession.query.filter_by(
+                user_id=user_id,
+                status=ReplaySessionStatus.COMPLETED
+            ).filter(
+                ReplaySession.final_balance.isnot(None)
+            ).order_by(
+                desc(ReplaySession.final_balance)
+            ).first()
+
+            if user_best_session:
+                # Find their rank
+                rank_count = ReplaySession.query.filter(
+                    ReplaySession.status == ReplaySessionStatus.COMPLETED,
+                    ReplaySession.final_balance > user_best_session.final_balance
+                ).count() + 1
+
+                final_balance = float(user_best_session.final_balance)
+                your_best = {
+                    "rank": rank_count,
+                    "final_balance": final_balance,
+                    "return_pct": ((final_balance - 100) / 100) * 100,
+                    "completed_at": user_best_session.completed_at.isoformat() if user_best_session.completed_at else None
+                }
+
+        return {
+            "entries": entries,
+            "your_best": your_best
+        }
+
+    @staticmethod
+    def _get_market_supply(market_id: int) -> Decimal:
+        """Get current supply for a replay market.
+
+        Args:
+            market_id: ReplayMarket ID
+
+        Returns:
+            Current supply as Decimal
+        """
+        result = db.session.query(func.sum(ReplayPosition.shares)).filter(
+            ReplayPosition.market_id == market_id
+        ).scalar()
+
+        if result is None:
+            return Decimal('0')
+
+        return Decimal(str(result))

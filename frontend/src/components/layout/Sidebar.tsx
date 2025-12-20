@@ -6,6 +6,7 @@ import {
   Calendar,
   Briefcase,
   Wallet,
+  PlayCircle,
 } from 'lucide-react';
 import { appConfig } from '@/config';
 
@@ -15,6 +16,7 @@ const navigation = [
   { name: 'Events', href: '/events', icon: Calendar },
   { name: 'Portfolio', href: '/portfolio', icon: Briefcase },
   { name: 'Wallet', href: '/wallet', icon: Wallet },
+  { name: 'Replay 2024', href: '/replay', icon: PlayCircle },
 ];
 
 export function Sidebar() {
@@ -27,7 +29,8 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 space-y-1 p-4">
         {navigation.map((item) => {
-          const isActive = location.pathname === item.href;
+          const isActive = location.pathname === item.href ||
+            (item.href === '/replay' && location.pathname.startsWith('/replay'));
           const Icon = item.icon;
           return (
             <Link

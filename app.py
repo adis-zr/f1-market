@@ -14,6 +14,7 @@ from api.f1_routes import bp as f1_bp
 from api.market_routes import bp as market_bp
 from api.settlement_routes import bp as settlement_bp
 from api.browse_routes import bp as browse_bp
+from api.replay_routes import bp as replay_bp
 from auth import bp as auth_bp
 
 app = Flask(__name__)
@@ -74,6 +75,7 @@ app.register_blueprint(f1_bp)
 app.register_blueprint(market_bp)
 app.register_blueprint(settlement_bp)
 app.register_blueprint(browse_bp)
+app.register_blueprint(replay_bp)
 
 # Import auth routes to apply rate limiting
 from auth.routes import apply_rate_limits
