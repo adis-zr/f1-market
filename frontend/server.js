@@ -13,9 +13,16 @@ const PORT = process.env.PORT || 3000;
 // Enable gzip compression
 app.use(compression());
 
-// Serve static files from the dist directory
-app.use(express.static(path.join(__dirname, 'dist'), {
+// Serve hashed assets with long-term caching (they have content hashes in filenames)
+app.use('/assets', express.static(path.join(__dirname, 'dist/assets'), {
   maxAge: '1y',
+  immutable: true,
+}));
+
+// Serve other static files without aggressive caching
+// index.html must not be cached as it references the hashed assets
+app.use(express.static(path.join(__dirname, 'dist'), {
+  maxAge: 0,
   etag: true,
 }));
 
