@@ -162,3 +162,34 @@ class ReplayAIService:
             count = ReplayAIPlayer.query.filter_by(difficulty=difficulty).count()
             counts[difficulty.value] = count
         return counts
+
+    @staticmethod
+    def get_ai_standings_at_race(difficulty: ReplayDifficulty, race_number: int) -> List[Dict]:
+        """Get AI player standings interpolated to a specific race.
+
+        Uses linear interpolation to estimate AI balance at a given race:
+        balance_at_race = $100 + (final_balance - $100) * (race_number / 24)
+
+        Args:
+            difficulty: Difficulty level to filter AI players
+            race_number: Race number (1-24)
+
+        Returns:
+            List of AI players with interpolated balances, sorted by balance desc
+        """
+        players = ReplayAIPlayer.query.filter_by(difficulty=difficulty).all()
+
+        standings = []
+        for player in players:
+            final = float(player.final_balance)
+            # Linear interpolation from $100 to final_balance over 24 races
+            interpolated_balance = 100 + (final - 100) * (race_number / 24)
+            standings.append({
+                "name": player.name,
+                "balance": round(interpolated_balance, 2),
+                "is_ai": True
+            })
+
+        # Sort by balance descending
+        standings.sort(key=lambda x: x["balance"], reverse=True)
+        return standings

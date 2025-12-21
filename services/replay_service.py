@@ -11,6 +11,7 @@ from db.replay_models import (
 )
 from data.f1_2024 import DRIVERS_2024, RACES_2024, get_race_info, get_points_for_position
 from pricing.bonding_curve import price, buy_cost, sell_payout
+from services.replay_ai_service import ReplayAIService
 
 
 # Constants
@@ -175,11 +176,24 @@ class ReplayService:
         for pos in position_records:
             market = db.session.get(ReplayMarket, pos.market_id)
             if market:
-                supply = ReplayService._get_market_supply(market.id)
-                current_price = price(supply, Decimal(str(market.a)), Decimal(str(market.b)))
                 shares = Decimal(str(pos.shares))
                 avg_entry = Decimal(str(pos.avg_entry_price))
+                is_settled = market.status == MarketStatus.SETTLED
+
+                if is_settled:
+                    # For settled markets, use the fixed settlement price
+                    current_price = Decimal(str(market.settlement_price)) if market.settlement_price else Decimal('0')
+                    market_value = shares * current_price
+                else:
+                    # For open markets, use bonding curve price
+                    supply = ReplayService._get_market_supply(market.id)
+                    current_price = price(supply, Decimal(str(market.a)), Decimal(str(market.b)))
+                    market_value = shares * current_price
+
                 unrealized_pnl = (current_price - avg_entry) * shares
+
+                # Can sell if: settled market OR current race's open market
+                can_sell = is_settled or (market.status == MarketStatus.OPEN and market.race_number == session.current_race)
 
                 positions.append({
                     "position_id": pos.id,
@@ -190,8 +204,11 @@ class ReplayService:
                     "shares": float(pos.shares),
                     "avg_entry_price": float(pos.avg_entry_price),
                     "current_price": float(current_price),
+                    "market_value": float(market_value),
                     "unrealized_pnl": float(unrealized_pnl),
-                    "realized_pnl": float(pos.realized_pnl)
+                    "realized_pnl": float(pos.realized_pnl),
+                    "is_settled": is_settled,
+                    "can_sell": can_sell
                 })
 
         # Calculate total P&L
@@ -327,8 +344,8 @@ class ReplayService:
         ).with_for_update().all()
 
         settlement_results = []
-        user_payouts = []
-        total_payout = Decimal('0')
+        user_settled_positions = []
+        total_settled_value = Decimal('0')
 
         for market in markets:
             driver_code = market.driver_code
@@ -353,61 +370,96 @@ class ReplayService:
                 "payout_per_share": float(payout_per_share)
             })
 
-            # Process positions for this market
-            positions = ReplayPosition.query.filter(
+            # Check if user has position (for display purposes only - NO auto-payout)
+            position_record = ReplayPosition.query.filter(
                 ReplayPosition.session_id == session.id,
                 ReplayPosition.market_id == market.id,
                 ReplayPosition.shares > 0
-            ).with_for_update().all()
+            ).first()
 
-            for pos in positions:
+            if position_record:
+                shares = Decimal(str(position_record.shares))
+                settlement_value = shares * payout_per_share
+                user_settled_positions.append({
+                    "driver_code": driver_code,
+                    "shares": float(shares),
+                    "settlement_value": float(settlement_value),
+                    "points_per_share": float(payout_per_share)
+                })
+                total_settled_value += settlement_value
+                # Note: Shares remain unchanged for carry-forward
+                # User must explicitly sell to convert to cash
+
+        # Build mini-leaderboard comparing user to AI agents
+        wallet = ReplayWallet.query.filter_by(session_id=session.id).first()
+        user_cash = float(wallet.balance) if wallet else 0
+
+        # Calculate user's total portfolio value (cash + all position market values)
+        all_positions = ReplayPosition.query.filter(
+            ReplayPosition.session_id == session.id,
+            ReplayPosition.shares > 0
+        ).all()
+
+        user_positions_value = Decimal('0')
+        for pos in all_positions:
+            market = db.session.get(ReplayMarket, pos.market_id)
+            if market:
                 shares = Decimal(str(pos.shares))
-                payout = shares * payout_per_share
+                if market.status == MarketStatus.SETTLED:
+                    pos_value = shares * Decimal(str(market.settlement_price or 0))
+                else:
+                    supply = ReplayService._get_market_supply(market.id)
+                    current_price = price(supply, Decimal(str(market.a)), Decimal(str(market.b)))
+                    pos_value = shares * current_price
+                user_positions_value += pos_value
 
-                if payout > 0:
-                    # Credit wallet
-                    wallet = ReplayWallet.query.filter_by(
-                        session_id=session.id
-                    ).with_for_update().first()
+        user_balance = user_cash + float(user_positions_value)
 
-                    if wallet:
-                        wallet.balance += payout
+        # Get AI standings at this race
+        ai_standings = ReplayAIService.get_ai_standings_at_race(
+            session.difficulty,
+            race_number
+        )
 
-                        # Create ledger entry
-                        ledger = ReplayLedgerEntry(
-                            session_id=session.id,
-                            amount=payout,
-                            transaction_type=TransactionType.SETTLEMENT,
-                            reference_type="market",
-                            reference_id=market.id,
-                            description=f"Settlement: {driver_code} P{position} - {float(shares)} shares @ {float(payout_per_share)} pts"
-                        )
-                        db.session.add(ledger)
+        # Merge user with AI standings
+        all_standings = ai_standings + [{
+            "name": "You",
+            "balance": round(user_balance, 2),
+            "is_ai": False
+        }]
+        all_standings.sort(key=lambda x: x["balance"], reverse=True)
 
-                        user_payouts.append({
-                            "driver_code": driver_code,
-                            "shares": float(shares),
-                            "payout": float(payout)
-                        })
-                        total_payout += payout
+        # Assign ranks
+        for i, entry in enumerate(all_standings, 1):
+            entry["rank"] = i
 
-                        # Update driver position cumulative payouts
-                        driver_pos = ReplayDriverPosition.query.filter_by(
-                            session_id=session.id,
-                            driver_code=driver_code
-                        ).first()
-                        if driver_pos:
-                            driver_pos.cumulative_payouts += payout
+        # Find user's position
+        user_entry = next(e for e in all_standings if not e["is_ai"])
+        user_rank = user_entry["rank"]
 
-                # Update realized P&L but DO NOT close position - shares carry forward
-                pos.realized_pnl += payout
+        # Create mini-leaderboard: top 3 + user context (if not in top 3)
+        mini_entries = all_standings[:3]
+        if user_rank > 3:
+            # Add user with 1 neighbor above and below (if available)
+            user_idx = user_rank - 1
+            start = max(3, user_idx - 1)
+            end = min(len(all_standings), user_idx + 2)
+            mini_entries.extend(all_standings[start:end])
+
+        mini_leaderboard = {
+            "user_rank": user_rank,
+            "user_balance": round(user_balance, 2),
+            "total_players": len(all_standings),
+            "entries": mini_entries
+        }
 
         return {
             "race_number": race_number,
             "race_name": race_data["name"],
             "results": settlement_results,
-            "your_payouts": user_payouts,
-            "total_payout": float(total_payout)
+            "your_settled_positions": user_settled_positions,
+            "total_settled_value": float(total_settled_value),
+            "mini_leaderboard": mini_leaderboard
         }
 
     @staticmethod

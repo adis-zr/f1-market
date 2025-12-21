@@ -192,6 +192,9 @@ class ReplayMarketService:
     def sell_shares(session_id: int, market_id: int, quantity: Decimal) -> Dict:
         """Sell shares in a replay market.
 
+        Supports selling in both OPEN markets (current race, bonding curve pricing)
+        and SETTLED markets (past races, fixed settlement price).
+
         Args:
             session_id: Replay session ID
             market_id: Replay market ID
@@ -202,7 +205,7 @@ class ReplayMarketService:
 
         Raises:
             ReplaySessionNotFoundError: If session not found
-            ReplayMarketClosedError: If market is not open
+            ReplayMarketClosedError: If market is not tradeable
             ReplayInsufficientSharesError: If insufficient shares
         """
         if quantity <= 0:
@@ -222,10 +225,16 @@ class ReplayMarketService:
                 raise ValueError(f"Market {market_id} not found")
             if market.session_id != session_id:
                 raise ValueError(f"Market {market_id} does not belong to session {session_id}")
-            if market.status != MarketStatus.OPEN:
-                raise ReplayMarketClosedError(f"Market {market_id} is not open")
-            if market.race_number != session.current_race:
+
+            # Allow selling in OPEN (current race) or SETTLED markets
+            if market.status not in (MarketStatus.OPEN, MarketStatus.SETTLED):
+                raise ReplayMarketClosedError(f"Market {market_id} is not tradeable")
+
+            # For OPEN markets, must be current race
+            if market.status == MarketStatus.OPEN and market.race_number != session.current_race:
                 raise ReplayMarketClosedError(f"Market is for race {market.race_number}, current race is {session.current_race}")
+
+            is_settled_sale = market.status == MarketStatus.SETTLED
 
             # Get position with lock
             position = ReplayPosition.query.filter_by(
@@ -244,14 +253,30 @@ class ReplayMarketService:
             if not wallet:
                 raise ValueError(f"Wallet not found for session {session_id}")
 
-            # Calculate payout
+            # Calculate payout based on market status
             current_supply = ReplayMarketService._get_market_supply(market_id)
-            payout = sell_payout(
-                current_supply,
-                quantity,
-                Decimal(str(market.a)),
-                Decimal(str(market.b))
-            )
+
+            if is_settled_sale:
+                # For SETTLED markets: payout at fixed settlement price
+                settlement_price = Decimal(str(market.settlement_price)) if market.settlement_price else Decimal('0')
+                payout = quantity * settlement_price
+                # Supply doesn't change for settled markets (price is fixed)
+                new_supply = current_supply - quantity
+                new_price = settlement_price
+            else:
+                # For OPEN markets: use bonding curve
+                payout = sell_payout(
+                    current_supply,
+                    quantity,
+                    Decimal(str(market.a)),
+                    Decimal(str(market.b))
+                )
+                new_supply = current_supply - quantity
+                new_price = price(
+                    new_supply,
+                    Decimal(str(market.a)),
+                    Decimal(str(market.b))
+                )
 
             # Update wallet
             wallet.balance += payout
@@ -298,31 +323,29 @@ class ReplayMarketService:
             db.session.add(trade)
 
             # Create ledger entry
+            description = f"Sell {float(quantity)} shares of {market.driver_code}"
+            if is_settled_sale:
+                description += f" (settled @ {float(market.settlement_price)} pts)"
             ledger = ReplayLedgerEntry(
                 session_id=session_id,
                 amount=payout,
                 transaction_type=TransactionType.SELL,
                 reference_type="market",
                 reference_id=market_id,
-                description=f"Sell {float(quantity)} shares of {market.driver_code}"
+                description=description
             )
             db.session.add(ledger)
 
-            # Create price history entry
-            new_supply = current_supply - quantity
-            new_price = price(
-                new_supply,
-                Decimal(str(market.a)),
-                Decimal(str(market.b))
-            )
-            price_history = ReplayPriceHistory(
-                market_id=market_id,
-                timestamp=utc_now(),
-                price=new_price,
-                supply=new_supply,
-                reason="sell"
-            )
-            db.session.add(price_history)
+            # Create price history entry (only for open markets)
+            if not is_settled_sale:
+                price_history = ReplayPriceHistory(
+                    market_id=market_id,
+                    timestamp=utc_now(),
+                    price=new_price,
+                    supply=new_supply,
+                    reason="sell"
+                )
+                db.session.add(price_history)
 
             db.session.commit()
 
@@ -338,7 +361,8 @@ class ReplayMarketService:
                 "new_price": float(new_price),
                 "remaining_shares": float(new_shares),
                 "new_balance": float(wallet.balance),
-                "trade_id": trade.id
+                "trade_id": trade.id,
+                "is_settled_sale": is_settled_sale
             }
 
         except IntegrityError as e:

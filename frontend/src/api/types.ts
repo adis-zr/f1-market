@@ -234,8 +234,11 @@ export interface ReplayPosition {
   shares: number;
   avg_entry_price: number;
   current_price: number;
+  market_value: number;
   unrealized_pnl: number;
   realized_pnl: number;
+  is_settled: boolean;
+  can_sell: boolean;
 }
 
 export interface ReplayPnL {
@@ -262,10 +265,25 @@ export interface ReplayRaceResult {
   points: number;
 }
 
-export interface ReplaySettlementPayout {
+export interface ReplaySettledPosition {
   driver_code: string;
   shares: number;
-  payout: number;
+  settlement_value: number;
+  points_per_share: number;
+}
+
+export interface MiniLeaderboardEntry {
+  rank: number;
+  name: string;
+  balance: number;
+  is_ai: boolean;
+}
+
+export interface MiniLeaderboard {
+  user_rank: number;
+  user_balance: number;
+  total_players: number;
+  entries: MiniLeaderboardEntry[];
 }
 
 export interface ReplaySettlementSummary {
@@ -278,8 +296,9 @@ export interface ReplaySettlementSummary {
     points: number;
     payout_per_share: number;
   }>;
-  your_payouts: ReplaySettlementPayout[];
-  total_payout: number;
+  your_settled_positions: ReplaySettledPosition[];
+  total_settled_value: number;
+  mini_leaderboard: MiniLeaderboard;
 }
 
 export interface ReplayAdvanceResponse {
