@@ -52,7 +52,13 @@ def upgrade():
             CREATE TYPE replaydifficulty_new AS ENUM ('EASY', 'MEDIUM', 'HARD')
         """))
 
-        # Step 2: Update replay_sessions.difficulty column
+        # Step 2: Drop the default on replay_sessions.difficulty (it references the old enum)
+        conn.execute(text("""
+            ALTER TABLE replay_sessions
+            ALTER COLUMN difficulty DROP DEFAULT
+        """))
+
+        # Step 3: Update replay_sessions.difficulty column type
         conn.execute(text("""
             ALTER TABLE replay_sessions
             ALTER COLUMN difficulty TYPE replaydifficulty_new
@@ -66,7 +72,7 @@ def upgrade():
             )
         """))
 
-        # Step 3: Update replay_ai_players.difficulty column
+        # Step 4: Update replay_ai_players.difficulty column
         conn.execute(text("""
             ALTER TABLE replay_ai_players
             ALTER COLUMN difficulty TYPE replaydifficulty_new
@@ -80,9 +86,15 @@ def upgrade():
             )
         """))
 
-        # Step 4: Drop the old type and rename the new one
+        # Step 5: Drop the old type and rename the new one
         conn.execute(text("DROP TYPE replaydifficulty"))
         conn.execute(text("ALTER TYPE replaydifficulty_new RENAME TO replaydifficulty"))
+
+        # Step 6: Re-add the default with uppercase value
+        conn.execute(text("""
+            ALTER TABLE replay_sessions
+            ALTER COLUMN difficulty SET DEFAULT 'MEDIUM'::replaydifficulty
+        """))
 
 
 def downgrade():
@@ -104,6 +116,12 @@ def downgrade():
     # Reverse: convert uppercase back to lowercase
     conn.execute(text("""
         CREATE TYPE replaydifficulty_new AS ENUM ('easy', 'medium', 'hard')
+    """))
+
+    # Drop the default first
+    conn.execute(text("""
+        ALTER TABLE replay_sessions
+        ALTER COLUMN difficulty DROP DEFAULT
     """))
 
     conn.execute(text("""
@@ -134,3 +152,9 @@ def downgrade():
 
     conn.execute(text("DROP TYPE replaydifficulty"))
     conn.execute(text("ALTER TYPE replaydifficulty_new RENAME TO replaydifficulty"))
+
+    # Re-add the default with lowercase value
+    conn.execute(text("""
+        ALTER TABLE replay_sessions
+        ALTER COLUMN difficulty SET DEFAULT 'medium'::replaydifficulty
+    """))
