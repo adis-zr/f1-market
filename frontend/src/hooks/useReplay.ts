@@ -256,6 +256,43 @@ export function useReplaySellShares(marketId: number) {
   });
 }
 
+// Variant that accepts marketId in the mutation (for selling from different markets)
+export function useReplaySellSharesDynamic() {
+  const queryClient = useQueryClient();
+
+  return useMutation<ReplaySellResponse, Error, { marketId: number; quantity: number }, ReplayMutationContext>({
+    mutationFn: ({ marketId, quantity }) => replayApi.sellShares(marketId, quantity),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: replayQueryKeys.session });
+      await queryClient.cancelQueries({ queryKey: replayQueryKeys.wallet });
+
+      const previousSession = queryClient.getQueryData<ReplayState>(replayQueryKeys.session);
+      const previousWallet = queryClient.getQueryData<{ balance: number; locked_balance: number }>(
+        replayQueryKeys.wallet
+      );
+
+      return { previousSession, previousWallet };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousSession) {
+        queryClient.setQueryData(replayQueryKeys.session, context.previousSession);
+      }
+      if (context?.previousWallet) {
+        queryClient.setQueryData(replayQueryKeys.wallet, context.previousWallet);
+      }
+    },
+    onSuccess: (_data, { marketId }) => {
+      queryClient.invalidateQueries({ queryKey: replayQueryKeys.session });
+      queryClient.invalidateQueries({ queryKey: replayQueryKeys.markets });
+      queryClient.invalidateQueries({ queryKey: replayQueryKeys.market(marketId) });
+      queryClient.invalidateQueries({ queryKey: replayQueryKeys.priceHistory(marketId) });
+      queryClient.invalidateQueries({ queryKey: replayQueryKeys.portfolio });
+      queryClient.invalidateQueries({ queryKey: replayQueryKeys.wallet });
+      queryClient.invalidateQueries({ queryKey: replayQueryKeys.ledger });
+    },
+  });
+}
+
 // =============================================================================
 // Utility Hooks
 // =============================================================================

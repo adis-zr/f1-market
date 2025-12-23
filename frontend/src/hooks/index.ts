@@ -43,6 +43,7 @@ export {
   useResetReplay,
   useReplayBuyShares,
   useReplaySellShares,
+  useReplaySellSharesDynamic,
   useReplayEstimateCost,
   useReplay,
 } from './useReplay';

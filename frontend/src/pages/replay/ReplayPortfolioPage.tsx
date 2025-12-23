@@ -4,14 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Lock } from 'lucide-react';
-import { useReplayPortfolio, useReplay, useReplaySellShares } from '@/hooks';
+import { useReplayPortfolio, useReplay, useReplaySellSharesDynamic } from '@/hooks';
 import { formatPrice, formatPnL } from '@/lib/formatters';
 import { useState } from 'react';
 
 export function ReplayPortfolioPage() {
   const { data: portfolio, isLoading } = useReplayPortfolio();
   const { currentRace } = useReplay();
-  const sellShares = useReplaySellShares();
+  const sellShares = useReplaySellSharesDynamic();
   const [sellingMarketId, setSellingMarketId] = useState<number | null>(null);
 
   const positions = portfolio?.positions || [];
