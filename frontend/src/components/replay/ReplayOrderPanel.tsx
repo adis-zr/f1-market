@@ -42,7 +42,7 @@ export function ReplayOrderPanel({
   );
   const { estimate: sellEstimate, isLoading: sellEstimateLoading } = useReplayEstimateCost(
     marketId,
-    qty,
+    qty <= availableShares ? qty : 0,  // Skip API call if qty exceeds holdings
     'sell'
   );
 
