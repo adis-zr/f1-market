@@ -12,7 +12,10 @@ type AuthEventListener = () => void;
 const authEventListeners: AuthEventListener[] = [];
 
 export function onUnauthorized(listener: AuthEventListener): () => void {
-  authEventListeners.push(listener);
+  // Prevent duplicate listener registration
+  if (!authEventListeners.includes(listener)) {
+    authEventListeners.push(listener);
+  }
   return () => {
     const index = authEventListeners.indexOf(listener);
     if (index > -1) {
@@ -58,14 +61,29 @@ apiClient.interceptors.response.use(
 /**
  * Fetch CSRF token from the server.
  * Call this on app initialization before making any POST requests.
+ * Retries up to 3 times on failure.
  */
 export async function fetchCsrfToken(): Promise<void> {
-  try {
-    const response = await apiClient.get('/auth/csrf-token');
-    csrfToken = response.data.csrf_token;
-  } catch (error) {
-    console.error('Failed to fetch CSRF token:', error);
+  const maxRetries = 3;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await apiClient.get('/auth/csrf-token');
+      csrfToken = response.data.csrf_token;
+      return;
+    } catch (error) {
+      lastError = error;
+      console.error(`Failed to fetch CSRF token (attempt ${attempt}/${maxRetries}):`, error);
+      if (attempt < maxRetries) {
+        // Wait before retrying (exponential backoff)
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      }
+    }
   }
+
+  // After all retries failed, throw to let caller handle it
+  throw new Error(`Failed to fetch CSRF token after ${maxRetries} attempts: ${lastError}`);
 }
 
 /**

@@ -6,12 +6,15 @@ import type {
   BuySharesResponse,
   SellSharesRequest,
   SellSharesResponse,
+  Market,
+  Position,
+  Wallet,
 } from '@/api/types';
 
 interface MutationContext {
-  previousMarket: unknown;
-  previousPosition: unknown;
-  previousWallet: unknown;
+  previousMarket: Market | undefined;
+  previousPosition: Position | undefined;
+  previousWallet: Wallet | undefined;
 }
 
 export function useBuyShares(marketId: number) {

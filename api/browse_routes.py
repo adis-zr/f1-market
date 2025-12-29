@@ -62,14 +62,15 @@ def _format_market_response(market, supply, current_price):
             }
 
     event_data = None
-    if market.event:
+    if market.event is not None:
+        event = market.event
         event_data = {
-            'id': market.event.id,
-            'name': market.event.name,
-            'venue': market.event.venue,
-            'start_at': market.event.start_at.isoformat() if market.event.start_at else None,
-            'end_at': market.event.end_at.isoformat() if market.event.end_at else None,
-            'status': _serialize_enum(market.event.status),
+            'id': event.id,
+            'name': event.name,
+            'venue': event.venue,
+            'start_at': event.start_at.isoformat() if event.start_at else None,
+            'end_at': event.end_at.isoformat() if event.end_at else None,
+            'status': _serialize_enum(event.status),
         }
 
     return {
