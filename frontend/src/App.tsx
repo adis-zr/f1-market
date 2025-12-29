@@ -11,9 +11,7 @@ import { EventDetailPage } from './pages/EventDetailPage';
 import { PortfolioPage } from './pages/PortfolioPage';
 import { WalletPage } from './pages/WalletPage';
 import {
-  ReplayLandingPage,
-  ReplayDashboardPage,
-  ReplayMarketDetailPage,
+  ReplayPage,
   ReplayPortfolioPage,
   ReplayWalletPage,
   ReplayCompletePage,
@@ -59,9 +57,7 @@ function App() {
               <Route path="portfolio" element={<PortfolioPage />} />
               <Route path="wallet" element={<WalletPage />} />
               {/* Replay Mode Routes */}
-              <Route path="replay" element={<ReplayLandingPage />} />
-              <Route path="replay/dashboard" element={<ReplayDashboardPage />} />
-              <Route path="replay/markets/:marketId" element={<ReplayMarketDetailPage />} />
+              <Route path="replay" element={<ReplayPage />} />
               <Route path="replay/portfolio" element={<ReplayPortfolioPage />} />
               <Route path="replay/wallet" element={<ReplayWalletPage />} />
               <Route path="replay/complete" element={<ReplayCompletePage />} />

@@ -39,15 +39,9 @@ export function ReplayLeaderboardPage() {
       />
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
-        {hasActiveSession ? (
-          <Link to="/replay/dashboard">
-            <Button>Back to Dashboard</Button>
-          </Link>
-        ) : (
-          <Link to="/replay">
-            <Button>Start Your Replay</Button>
-          </Link>
-        )}
+        <Link to="/replay">
+          <Button>{hasActiveSession ? 'Back to Replay' : 'Start Your Replay'}</Button>
+        </Link>
 
         <Tabs
           value={selectedDifficulty}

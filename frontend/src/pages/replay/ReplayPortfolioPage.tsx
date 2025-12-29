@@ -53,7 +53,6 @@ export function ReplayPortfolioPage() {
         description="Your positions across all races"
         breadcrumbs={[
           { label: 'Replay', href: '/replay' },
-          { label: 'Dashboard', href: '/replay/dashboard' },
           { label: 'Portfolio' },
         ]}
       />
@@ -127,7 +126,7 @@ export function ReplayPortfolioPage() {
             <div className="text-center py-8 text-muted-foreground">
               <p>You don't have any active positions in the current race.</p>
               <Link
-                to="/replay/dashboard"
+                to="/replay"
                 className="text-primary hover:underline mt-2 inline-block"
               >
                 Browse markets to start trading
@@ -186,7 +185,7 @@ export function ReplayPortfolioPage() {
                         <td className="p-3 text-right">
                           {isCurrentRace && position.shares > 0 && (
                             <Link
-                              to={`/replay/markets/${position.market_id}`}
+                              to={`/replay?market=${position.market_id}`}
                               className="text-primary hover:underline text-sm"
                             >
                               Trade

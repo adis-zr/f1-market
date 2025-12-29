@@ -39,7 +39,7 @@ export function ReplayCompletePage() {
   const handlePlayAgain = async () => {
     try {
       await resetMutation.mutateAsync();
-      navigate('/replay/dashboard');
+      navigate('/replay');
     } catch {
       // Error handled by mutation
     }

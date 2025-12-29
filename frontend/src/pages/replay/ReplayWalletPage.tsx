@@ -44,7 +44,6 @@ export function ReplayWalletPage() {
         description="Your virtual balance and transaction history"
         breadcrumbs={[
           { label: 'Replay', href: '/replay' },
-          { label: 'Dashboard', href: '/replay/dashboard' },
           { label: 'Wallet' },
         ]}
       />
