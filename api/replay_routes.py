@@ -107,7 +107,11 @@ def get_session():
 
 @bp.route('/reset', methods=['POST'])
 def reset_replay():
-    """Reset current replay session to start fresh."""
+    """Reset current replay session to start fresh.
+
+    Request body (optional):
+        difficulty: "easy" | "medium" | "hard" - New difficulty level
+    """
     user_id = get_current_user_id()
     if not user_id:
         return jsonify({'error': 'Authentication required'}), 401
@@ -117,7 +121,18 @@ def reset_replay():
         if not session:
             return jsonify({'error': 'No active replay session'}), 404
 
-        state = ReplayService.reset_replay(session.id)
+        # Parse optional difficulty from request
+        data = request.get_json() or {}
+        difficulty_str = data.get('difficulty')
+        difficulty = None
+
+        if difficulty_str:
+            try:
+                difficulty = ReplayDifficulty(difficulty_str.lower())
+            except ValueError:
+                return jsonify({'error': 'Invalid difficulty. Use: easy, medium, hard'}), 400
+
+        state = ReplayService.reset_replay(session.id, difficulty=difficulty)
         return jsonify(state), 200
 
     except ReplaySessionNotFoundError as e:

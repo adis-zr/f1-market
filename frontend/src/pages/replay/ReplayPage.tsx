@@ -123,8 +123,8 @@ export function ReplayPage() {
 
   const handleStartNewReplay = async () => {
     try {
-      await resetReplay.mutateAsync();
-      await startReplay.mutateAsync(selectedDifficulty);
+      // Reset with new difficulty in one call
+      await resetReplay.mutateAsync(selectedDifficulty);
       setShowStartNewDialog(false);
     } catch (error) {
       console.error('Failed to start new replay:', error);

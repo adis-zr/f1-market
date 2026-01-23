@@ -440,20 +440,12 @@ class ReplayService:
         user_entry = next(e for e in all_standings if not e["is_ai"])
         user_rank = user_entry["rank"]
 
-        # Create mini-leaderboard: top 3 + user context (if not in top 3)
-        mini_entries = all_standings[:3]
-        if user_rank > 3:
-            # Add user with 1 neighbor above and below (if available)
-            user_idx = user_rank - 1
-            start = max(3, user_idx - 1)
-            end = min(len(all_standings), user_idx + 2)
-            mini_entries.extend(all_standings[start:end])
-
+        # Include all players in mini-leaderboard
         mini_leaderboard = {
             "user_rank": user_rank,
             "user_balance": round(user_balance, 2),
             "total_players": len(all_standings),
-            "entries": mini_entries
+            "entries": all_standings
         }
 
         return {
@@ -535,7 +527,7 @@ class ReplayService:
         return markets
 
     @staticmethod
-    def reset_replay(session_id: int) -> Dict:
+    def reset_replay(session_id: int, difficulty: Optional[ReplayDifficulty] = None) -> Dict:
         """Reset a replay session to start fresh.
 
         Deletes all trades, positions, ledger entries, markets.
@@ -543,6 +535,7 @@ class ReplayService:
 
         Args:
             session_id: Session ID
+            difficulty: Optional new difficulty level
 
         Returns:
             Fresh session state
@@ -559,11 +552,11 @@ class ReplayService:
                 )
             ).delete(synchronize_session=False)
 
-            ReplayTrade.query.filter_by(session_id=session_id).delete()
-            ReplayPosition.query.filter_by(session_id=session_id).delete()
-            ReplayDriverPosition.query.filter_by(session_id=session_id).delete()
-            ReplayLedgerEntry.query.filter_by(session_id=session_id).delete()
-            ReplayMarket.query.filter_by(session_id=session_id).delete()
+            ReplayTrade.query.filter_by(session_id=session_id).delete(synchronize_session=False)
+            ReplayPosition.query.filter_by(session_id=session_id).delete(synchronize_session=False)
+            ReplayDriverPosition.query.filter_by(session_id=session_id).delete(synchronize_session=False)
+            ReplayLedgerEntry.query.filter_by(session_id=session_id).delete(synchronize_session=False)
+            ReplayMarket.query.filter_by(session_id=session_id).delete(synchronize_session=False)
 
             # Reset wallet
             wallet = session.wallet
@@ -576,6 +569,10 @@ class ReplayService:
             session.status = ReplaySessionStatus.ACTIVE
             session.completed_at = None
             session.final_balance = None
+
+            # Update difficulty if provided
+            if difficulty is not None:
+                session.difficulty = difficulty
 
             # Create new initial ledger entry
             ledger_entry = ReplayLedgerEntry(

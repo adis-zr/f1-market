@@ -111,7 +111,8 @@ export const replayApi = {
   startReplay: (difficulty?: 'easy' | 'medium' | 'hard') =>
     post<ReplayState>('/api/replay/start', difficulty ? { difficulty } : undefined),
   getSession: () => get<ReplayState>('/api/replay/session'),
-  resetReplay: () => post<ReplayState>('/api/replay/reset'),
+  resetReplay: (difficulty?: 'easy' | 'medium' | 'hard') =>
+    post<ReplayState>('/api/replay/reset', difficulty ? { difficulty } : undefined),
 
   // Race progression
   advanceRace: () => post<ReplayAdvanceResponse>('/api/replay/advance'),

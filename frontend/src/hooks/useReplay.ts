@@ -166,8 +166,8 @@ export function useAdvanceRace() {
 export function useResetReplay() {
   const queryClient = useQueryClient();
 
-  return useMutation<ReplayState, Error>({
-    mutationFn: () => replayApi.resetReplay(),
+  return useMutation<ReplayState, Error, ReplayDifficulty | undefined>({
+    mutationFn: (difficulty) => replayApi.resetReplay(difficulty),
     onSuccess: (data) => {
       queryClient.setQueryData(replayQueryKeys.session, data);
       queryClient.invalidateQueries({ queryKey: replayQueryKeys.markets });
