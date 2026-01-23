@@ -40,6 +40,7 @@ export {
   useReplayLeaderboard,
   useStartReplay,
   useAdvanceRace,
+  useSettleRace,
   useResetReplay,
   useReplayBuyShares,
   useReplaySellShares,

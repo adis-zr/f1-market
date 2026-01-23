@@ -203,7 +203,8 @@ export function ReplayPage() {
     if (currentRace < 24) return 'Market Closed - Settling...';
     return 'Finish Season';
   };
-  const buttonText = getButtonText();
+  // buttonText used for accessibility/debugging if needed
+  void getButtonText();
 
   return (
     <div>
