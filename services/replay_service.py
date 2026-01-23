@@ -1,4 +1,5 @@
 """Replay service for managing replay sessions and operations."""
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional
 from sqlalchemy import func, desc
@@ -7,7 +8,7 @@ from db import db, utc_now, MarketStatus, TransactionType, User
 from db.replay_models import (
     ReplaySession, ReplaySessionStatus, ReplayWallet, ReplayMarket,
     ReplayPosition, ReplayTrade, ReplayLedgerEntry, ReplayPriceHistory,
-    ReplayDifficulty, ReplayDriverPosition, ReplayAIPlayer
+    ReplayDifficulty, ReplayDriverPosition, ReplayAIPlayer, ReplayScheduledAITrade
 )
 from data.f1_2024 import DRIVERS_2024, RACES_2024, get_race_info, get_points_for_position
 from pricing.bonding_curve import price, buy_cost, sell_payout
@@ -19,6 +20,7 @@ INITIAL_BALANCE = Decimal('100')
 BONDING_A = Decimal('0.1')  # Bonding curve slope
 BONDING_B = Decimal('0.5')  # Bonding curve baseline
 TOTAL_RACES = 24
+DEFAULT_MARKET_DURATION = 10  # seconds
 
 
 class ReplaySessionNotFoundError(Exception):
@@ -38,6 +40,11 @@ class ReplayInsufficientBalanceError(Exception):
 
 class ReplayInsufficientSharesError(Exception):
     """Raised when user doesn't have enough shares to sell."""
+    pass
+
+
+class ReplayMarketWindowClosedError(Exception):
+    """Raised when trying to trade after the market window has closed."""
     pass
 
 
@@ -111,11 +118,12 @@ class ReplayService:
         ).first()
 
     @staticmethod
-    def get_session_state(session_id: int) -> Dict:
+    def get_session_state(session_id: int, execute_ai_trades: bool = True) -> Dict:
         """Get complete state of a replay session.
 
         Args:
             session_id: Session ID
+            execute_ai_trades: Whether to execute pending AI trades (lazy execution)
 
         Returns:
             Dict with full session state
@@ -127,7 +135,14 @@ class ReplayService:
         if not session:
             raise ReplaySessionNotFoundError(f"Session {session_id} not found")
 
+        # Execute pending AI trades if within window (lazy execution)
+        if execute_ai_trades and session.market_opens_at:
+            ReplayAIService.execute_pending_ai_trades(session_id, utc_now())
+
         wallet = session.wallet
+
+        # Calculate market timing info
+        market_timing = ReplayService._get_market_timing(session)
 
         # Get current race info
         current_race_info = None
@@ -258,7 +273,8 @@ class ReplayService:
                 "unrealized": total_unrealized_pnl,
                 "total": total_realized_pnl + total_unrealized_pnl
             },
-            "all_races": all_races
+            "all_races": all_races,
+            "market_timing": market_timing
         }
 
     @staticmethod
@@ -462,6 +478,7 @@ class ReplayService:
         """Create markets for all 20 drivers for a race.
 
         Carries forward existing positions from driver positions table.
+        Sets up market timing and schedules AI trades.
 
         Args:
             session: ReplaySession object
@@ -471,6 +488,9 @@ class ReplayService:
             List of created ReplayMarket objects
         """
         markets = []
+
+        # Set market timing
+        session.market_opens_at = utc_now()
 
         # Get existing driver positions for carry-forward
         driver_positions = {
@@ -524,13 +544,22 @@ class ReplayService:
             )
             db.session.add(price_history)
 
+        # Schedule AI trades for this race
+        ReplayAIService.schedule_ai_trades_for_race(
+            session_id=session.id,
+            race_number=race_number,
+            market_opens_at=session.market_opens_at,
+            duration_seconds=session.market_duration_seconds,
+            difficulty=session.difficulty
+        )
+
         return markets
 
     @staticmethod
     def reset_replay(session_id: int, difficulty: Optional[ReplayDifficulty] = None) -> Dict:
         """Reset a replay session to start fresh.
 
-        Deletes all trades, positions, ledger entries, markets.
+        Deletes all trades, positions, ledger entries, markets, and scheduled AI trades.
         Resets wallet to $100 and current_race to 0.
 
         Args:
@@ -558,6 +587,9 @@ class ReplayService:
             ReplayLedgerEntry.query.filter_by(session_id=session_id).delete(synchronize_session=False)
             ReplayMarket.query.filter_by(session_id=session_id).delete(synchronize_session=False)
 
+            # Clear scheduled AI trades
+            ReplayScheduledAITrade.query.filter_by(session_id=session_id).delete(synchronize_session=False)
+
             # Reset wallet
             wallet = session.wallet
             if wallet:
@@ -569,6 +601,7 @@ class ReplayService:
             session.status = ReplaySessionStatus.ACTIVE
             session.completed_at = None
             session.final_balance = None
+            session.market_opens_at = None
 
             # Update difficulty if provided
             if difficulty is not None:
@@ -716,3 +749,157 @@ class ReplayService:
             return Decimal('0')
 
         return Decimal(str(result))
+
+    @staticmethod
+    def _get_market_timing(session: ReplaySession) -> Dict:
+        """Get market timing info for a session.
+
+        Args:
+            session: ReplaySession object
+
+        Returns:
+            Dict with timing info
+        """
+        now = utc_now()
+
+        if not session.market_opens_at or session.current_race == 0:
+            return {
+                "opens_at": None,
+                "duration_seconds": session.market_duration_seconds,
+                "server_time": now.isoformat(),
+                "time_remaining": 0,
+                "can_trade": False,
+                "market_phase": "pending"
+            }
+
+        opens_at = session.market_opens_at
+        duration = session.market_duration_seconds
+
+        # Ensure timezone compatibility - make opens_at timezone-aware if needed
+        if opens_at.tzinfo is None:
+            from datetime import timezone
+            opens_at = opens_at.replace(tzinfo=timezone.utc)
+
+        closes_at = opens_at + timedelta(seconds=duration)
+
+        time_remaining = max(0, (closes_at - now).total_seconds())
+        can_trade = time_remaining > 0
+
+        # Determine market phase
+        if now < opens_at:
+            market_phase = "pending"
+        elif can_trade:
+            market_phase = "open"
+        else:
+            market_phase = "closed"
+
+        return {
+            "opens_at": opens_at.isoformat(),
+            "closes_at": closes_at.isoformat(),
+            "duration_seconds": duration,
+            "server_time": now.isoformat(),
+            "time_remaining": round(time_remaining, 1),
+            "can_trade": can_trade,
+            "market_phase": market_phase
+        }
+
+    @staticmethod
+    def is_within_trading_window(session: ReplaySession) -> bool:
+        """Check if the current market window is open for trading.
+
+        Args:
+            session: ReplaySession object
+
+        Returns:
+            True if trading is allowed, False otherwise
+        """
+        if not session.market_opens_at or session.current_race == 0:
+            return False
+
+        opens_at = session.market_opens_at
+        # Ensure timezone compatibility
+        if opens_at.tzinfo is None:
+            from datetime import timezone
+            opens_at = opens_at.replace(tzinfo=timezone.utc)
+
+        now = utc_now()
+        closes_at = opens_at + timedelta(seconds=session.market_duration_seconds)
+
+        return now < closes_at
+
+    @staticmethod
+    def settle_current_race(session_id: int) -> Dict:
+        """Settle the current race when the market window closes.
+
+        Executes all remaining AI trades and settles the race.
+        Called by frontend when timer expires.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Dict with settlement summary and new state
+
+        Raises:
+            ReplaySessionNotFoundError: If session not found
+            ReplayMarketWindowClosedError: If trying to settle while window is still open
+        """
+        try:
+            session = ReplaySession.query.filter_by(id=session_id).with_for_update().first()
+            if not session:
+                raise ReplaySessionNotFoundError(f"Session {session_id} not found")
+
+            if session.status != ReplaySessionStatus.ACTIVE:
+                raise ValueError(f"Session is not active (status: {session.status.value})")
+
+            if session.current_race == 0:
+                raise ValueError("No race in progress to settle")
+
+            # Check if window is still open (with 0.5s grace period)
+            if session.market_opens_at:
+                opens_at = session.market_opens_at
+                # Ensure timezone compatibility
+                if opens_at.tzinfo is None:
+                    from datetime import timezone
+                    opens_at = opens_at.replace(tzinfo=timezone.utc)
+                closes_at = opens_at + timedelta(seconds=session.market_duration_seconds)
+                now = utc_now()
+                if now < closes_at - timedelta(seconds=0.5):
+                    raise ReplayMarketWindowClosedError(
+                        f"Trading window still open for {(closes_at - now).total_seconds():.1f}s"
+                    )
+
+            # Execute all remaining AI trades
+            far_future = utc_now() + timedelta(hours=24)
+            ReplayAIService.execute_pending_ai_trades(session_id, far_future)
+
+            # Ensure AI players exist
+            ReplayAIService.ensure_ai_players_exist()
+
+            # Settle the current race
+            settlement_summary = ReplayService._settle_race(session, session.current_race)
+
+            # Advance to next race
+            session.current_race += 1
+
+            if session.current_race <= TOTAL_RACES:
+                # Create markets for new race
+                ReplayService._create_race_markets(session, session.current_race)
+            else:
+                # Season complete
+                session.status = ReplaySessionStatus.COMPLETED
+                session.completed_at = utc_now()
+                wallet = session.wallet
+                if wallet:
+                    session.final_balance = wallet.balance
+
+            db.session.commit()
+
+            return {
+                "settlement_summary": settlement_summary,
+                "new_state": ReplayService.get_session_state(session_id)
+            }
+
+        except Exception as e:
+            db.session.rollback()
+            raise

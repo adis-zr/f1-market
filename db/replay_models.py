@@ -37,6 +37,10 @@ class ReplaySession(db.Model):
     completed_at = db.Column(db.DateTime, nullable=True)
     final_balance = db.Column(db.Numeric(precision=18, scale=8), nullable=True)  # Cached for leaderboard
 
+    # Timer-based market fields
+    market_opens_at = db.Column(db.DateTime, nullable=True)  # When current race market opened
+    market_duration_seconds = db.Column(db.Integer, default=10, nullable=False)  # Trading window duration
+
     # Relationships
     user = db.relationship('User', backref='replay_sessions')
     wallet = db.relationship('ReplayWallet', backref='session', uselist=False, cascade='all, delete-orphan')
@@ -215,3 +219,30 @@ class ReplayDriverPosition(db.Model):
 
     def __repr__(self):
         return f'<ReplayDriverPosition session={self.session_id} driver={self.driver_code} shares={self.shares}>'
+
+
+class ReplayScheduledAITrade(db.Model):
+    """Scheduled AI trade for dynamic execution during market window.
+
+    AI trades are scheduled when a race starts and executed lazily
+    as time progresses during the 10-second trading window.
+    """
+    __tablename__ = 'replay_scheduled_ai_trades'
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('replay_sessions.id'), nullable=False, index=True)
+    market_id = db.Column(db.Integer, db.ForeignKey('replay_markets.id'), nullable=False, index=True)
+    ai_player_name = db.Column(db.String(100), nullable=False)
+    quantity = db.Column(db.Numeric(precision=18, scale=8), nullable=False)
+    scheduled_at = db.Column(db.DateTime, nullable=False, index=True)  # When to execute
+    executed_at = db.Column(db.DateTime, nullable=True)  # NULL = pending, set = executed
+    execution_price = db.Column(db.Numeric(precision=18, scale=8), nullable=True)
+    execution_cost = db.Column(db.Numeric(precision=18, scale=8), nullable=True)
+
+    # Relationships
+    session = db.relationship('ReplaySession', backref='scheduled_ai_trades')
+    market = db.relationship('ReplayMarket', backref='scheduled_ai_trades')
+
+    def __repr__(self):
+        status = 'executed' if self.executed_at else 'pending'
+        return f'<ReplayScheduledAITrade {self.id} {self.ai_player_name} {self.quantity} shares [{status}]>'

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,7 @@ import {
   useReplay,
   useStartReplay,
   useAdvanceRace,
+  useSettleRace,
   useResetReplay,
   useReplayLeaderboard,
 } from '@/hooks';
@@ -35,25 +37,26 @@ import {
   Trophy,
   Bot,
   Plus,
+  Timer,
 } from 'lucide-react';
 
 const DIFFICULTY_CONFIG = {
   easy: {
     label: 'Easy',
     aiCount: 5,
-    description: 'Fewer AI players with weaker strategies',
+    description: 'Fewer AI with weaker strategies, late trades',
     color: 'border-green-500',
   },
   medium: {
     label: 'Medium',
-    aiCount: 10,
-    description: 'Balanced mix of AI strategies',
+    aiCount: 15,
+    description: 'Balanced mix, $150 AI budget, mixed timing',
     color: 'border-yellow-500',
   },
   hard: {
     label: 'Hard',
-    aiCount: 20,
-    description: 'Many skilled AI competitors',
+    aiCount: 35,
+    description: '35 AI with $200 budget, early trades',
     color: 'border-red-500',
   },
 } as const;
@@ -74,12 +77,50 @@ export function ReplayPage() {
     isCompleted,
     currentRace,
     isLoading,
+    timer,
   } = useReplay();
 
   const startReplay = useStartReplay();
   const advanceRace = useAdvanceRace();
+  const settleRace = useSettleRace();
   const resetReplay = useResetReplay();
   const { data: leaderboard } = useReplayLeaderboard(10);
+
+  // Auto-settle when timer expires
+  const [hasAutoSettled, setHasAutoSettled] = useState(false);
+
+  const handleSettleRace = useCallback(async () => {
+    if (hasAutoSettled || settleRace.isPending) return;
+    setHasAutoSettled(true);
+
+    try {
+      const result = await settleRace.mutateAsync();
+      if (result.settlement_summary) {
+        setSettlementData(result.settlement_summary);
+        setShowSettlement(true);
+      }
+      if (result.new_state.session.status === 'completed') {
+        navigate('/replay/complete');
+      }
+    } catch (error) {
+      console.error('Failed to settle race:', error);
+      setHasAutoSettled(false);
+    }
+  }, [hasAutoSettled, settleRace, navigate]);
+
+  // Auto-settle when timer hits 0
+  useEffect(() => {
+    if (timer.isMarketOpen && timer.timeRemaining === 0 && !hasAutoSettled && currentRace > 0) {
+      handleSettleRace();
+    }
+  }, [timer.isMarketOpen, timer.timeRemaining, hasAutoSettled, currentRace, handleSettleRace]);
+
+  // Reset auto-settle flag when a new race starts
+  useEffect(() => {
+    if (timer.timeRemaining > 0) {
+      setHasAutoSettled(false);
+    }
+  }, [currentRace, timer.timeRemaining]);
 
   // Modal states
   const [selectedDifficulty, setSelectedDifficulty] = useState<ReplayDifficulty>('medium');
@@ -153,11 +194,16 @@ export function ReplayPage() {
     }
   }, [isCompleted, navigate]);
 
-  const buttonText = currentRace === 0
-    ? 'Start Race 1'
-    : currentRace < 24
-    ? 'Finish Race & Continue'
-    : 'Finish Season';
+  // Button text changes based on race state and timer
+  const getButtonText = () => {
+    if (currentRace === 0) return 'Start Race 1';
+    if (timer.isMarketOpen && timer.timeRemaining > 0) {
+      return 'Market Open - Trading...';
+    }
+    if (currentRace < 24) return 'Market Closed - Settling...';
+    return 'Finish Season';
+  };
+  const buttonText = getButtonText();
 
   return (
     <div>
@@ -331,7 +377,7 @@ export function ReplayPage() {
               </Card>
             </div>
 
-            {/* Race Info & Action */}
+            {/* Race Info & Timer */}
             {currentRaceInfo && (
               <Card>
                 <CardHeader>
@@ -345,6 +391,44 @@ export function ReplayPage() {
                     <Badge variant="secondary">Race {currentRace}</Badge>
                   </div>
                 </CardHeader>
+                {/* Countdown Timer */}
+                {timer.isMarketOpen && (
+                  <CardContent className="pt-0">
+                    <div className="bg-muted/50 rounded-lg p-4 text-center space-y-3">
+                      <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                        <Timer className="h-4 w-4" />
+                        <span>Market closes in</span>
+                      </div>
+                      <div className={cn(
+                        "text-5xl font-bold tabular-nums",
+                        timer.timeRemaining <= 3 ? "text-red-500 animate-pulse" :
+                        timer.timeRemaining <= 5 ? "text-yellow-500" :
+                        "text-primary"
+                      )}>
+                        {timer.timeRemaining}s
+                      </div>
+                      <Progress
+                        value={(timer.timeRemaining / timer.durationSeconds) * 100}
+                        className="h-2"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {timer.canTrade ? 'Place your trades before the market closes!' : 'Market closed - settling...'}
+                      </p>
+                    </div>
+                  </CardContent>
+                )}
+                {!timer.isMarketOpen && timer.marketPhase === 'closed' && (
+                  <CardContent className="pt-0">
+                    <div className="bg-red-500/10 rounded-lg p-4 text-center">
+                      <div className="text-lg font-semibold text-red-600">
+                        Market Closed
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Settling race results...
+                      </p>
+                    </div>
+                  </CardContent>
+                )}
               </Card>
             )}
 
@@ -352,10 +436,21 @@ export function ReplayPage() {
             {markets.length > 0 ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Driver Markets</CardTitle>
-                  <CardDescription>
-                    Buy shares of drivers you think will score points. Click to trade.
-                  </CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Driver Markets</CardTitle>
+                      <CardDescription>
+                        {timer.canTrade
+                          ? 'Buy shares of drivers you think will score points. Click to trade.'
+                          : 'Market closed. Waiting for settlement...'}
+                      </CardDescription>
+                    </div>
+                    {timer.isMarketOpen && (
+                      <Badge variant={timer.canTrade ? 'default' : 'destructive'}>
+                        {timer.canTrade ? 'Trading Open' : 'Market Closed'}
+                      </Badge>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -408,18 +503,41 @@ export function ReplayPage() {
 
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-4 justify-center">
-              <Button
-                size="lg"
-                onClick={handleAdvanceRace}
-                disabled={advanceRace.isPending}
-              >
-                {advanceRace.isPending ? (
-                  <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
-                ) : (
-                  <Play className="mr-2 h-5 w-5" />
-                )}
-                {buttonText}
-              </Button>
+              {currentRace === 0 ? (
+                // Start Race 1 button
+                <Button
+                  size="lg"
+                  onClick={handleAdvanceRace}
+                  disabled={advanceRace.isPending}
+                >
+                  {advanceRace.isPending ? (
+                    <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+                  ) : (
+                    <Play className="mr-2 h-5 w-5" />
+                  )}
+                  Start Race 1
+                </Button>
+              ) : timer.isMarketOpen && timer.timeRemaining > 0 ? (
+                // Market is open - show trading status
+                <div className="text-center text-muted-foreground">
+                  <p className="text-sm">Market open - trade now!</p>
+                  <p className="text-xs">Race will auto-settle when timer expires</p>
+                </div>
+              ) : (
+                // Market closed - show settling or manual settle button
+                <Button
+                  size="lg"
+                  onClick={handleSettleRace}
+                  disabled={settleRace.isPending || hasAutoSettled}
+                >
+                  {settleRace.isPending || hasAutoSettled ? (
+                    <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
+                  ) : (
+                    <Flag className="mr-2 h-5 w-5" />
+                  )}
+                  {settleRace.isPending || hasAutoSettled ? 'Settling...' : 'Settle Race'}
+                </Button>
+              )}
             </div>
 
             {/* Active Positions */}

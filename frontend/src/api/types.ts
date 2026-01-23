@@ -247,6 +247,16 @@ export interface ReplayPnL {
   total: number;
 }
 
+export interface MarketTiming {
+  opens_at: string | null;
+  closes_at?: string | null;
+  duration_seconds: number;
+  server_time: string;
+  time_remaining: number;
+  can_trade: boolean;
+  market_phase: 'pending' | 'open' | 'closed';
+}
+
 export interface ReplayState {
   session: ReplaySession;
   wallet: ReplayWallet;
@@ -255,6 +265,7 @@ export interface ReplayState {
   positions: ReplayPosition[];
   total_pnl: ReplayPnL;
   all_races: ReplayRace[];
+  market_timing: MarketTiming;
 }
 
 export interface ReplayRaceResult {

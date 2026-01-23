@@ -3,29 +3,59 @@
 This service manages AI players that provide competition on the leaderboard.
 AI players simulate actual trading strategies using known F1 2024 race results.
 Smarter AI (higher difficulty) makes bets based on actual race outcomes.
+
+In timer mode, AI trades are scheduled at race start and executed lazily
+throughout the trading window, affecting bonding curve prices in real-time.
 """
+from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import random
 
 from db import db
-from db.replay_models import ReplayAIPlayer, ReplayDifficulty
+from db.replay_models import (
+    ReplayAIPlayer, ReplayDifficulty, ReplayScheduledAITrade,
+    ReplayMarket, ReplayPriceHistory
+)
+from db.models import utc_now
 from data.f1_2024 import RACES_2024, get_points_for_position
+from pricing.bonding_curve import price, buy_cost
 
 
 # Cost per share at empty market (bonding curve: a=0.1, b=0.5)
 # integral from 0 to 1 of (0.1*s + 0.5) = 0.55
 COST_PER_SHARE = Decimal('0.55')
 
-# AI investment per race as fraction of current balance
-INVESTMENT_FRACTION = Decimal('0.10')
+# Points to return multiplier (25 pts winner = 2.5x return, 0 pts = total loss)
+# This normalizes returns to prevent astronomical compounding
+POINTS_RETURN_DIVISOR = Decimal('10')
 
 # Minimum balance to keep (don't go all-in)
 MIN_RESERVE = Decimal('5.00')
 
-# Points to return multiplier (25 pts winner = 2.5x return, 0 pts = total loss)
-# This normalizes returns to prevent astronomical compounding
-POINTS_RETURN_DIVISOR = Decimal('10')
+# Default AI investment per race as fraction of current balance (overridden by difficulty)
+DEFAULT_INVESTMENT_FRACTION = Decimal('0.10')
+
+# Time slot distributions for AI trades per difficulty
+# Format: list of (start_second, end_second, fraction_of_trades)
+AI_TRADE_TIMING = {
+    ReplayDifficulty.EASY: [
+        (6, 8, 0.40),   # Late trades - user gets better prices
+        (8, 10, 0.60),
+    ],
+    ReplayDifficulty.MEDIUM: [
+        (2, 4, 0.25),
+        (4, 6, 0.25),
+        (6, 8, 0.25),
+        (8, 10, 0.25),
+    ],
+    ReplayDifficulty.HARD: [
+        (0, 2, 0.50),   # Early trades - AI gets better prices
+        (2, 4, 0.30),
+        (4, 6, 0.15),
+        (6, 10, 0.05),
+    ],
+}
 
 
 def _get_race_driver_points(race_number: int) -> Dict[str, int]:
@@ -243,71 +273,106 @@ STRATEGIES = {
 # aggression: how much of balance to invest each race (multiplier of base)
 AI_CONFIGS = {
     ReplayDifficulty.EASY: {
+        "starting_balance": Decimal('100'),
+        "investment_fraction": Decimal('0.08'),
         "players": [
-            ("BackmarkerBot", "backmarker_fan", 1.0),
-            ("BadTimingAI", "chase_hype", 0.8),
-            ("HypeChaser", "chase_hype", 1.2),
-            ("RandomRick", "random_trader", 1.0),
-            ("DiverseDan", "points_scorer", 0.5),  # Too conservative
+            ("BackmarkerBot", "backmarker_fan", 0.8),
+            ("BadTimingAI", "chase_hype", 0.6),
+            ("RandomRick", "random_trader", 0.8),
+            ("MidfieldMike", "midfield_fan", 0.7),
+            ("CasualCarl", "points_scorer", 0.5),
         ]
     },
     ReplayDifficulty.MEDIUM: {
+        "starting_balance": Decimal('150'),
+        "investment_fraction": Decimal('0.12'),
         "players": [
-            # Losing bots
+            # Losing (3)
             ("BackmarkerBot", "backmarker_fan", 1.0),
-            ("BadTimingAI", "chase_hype", 0.8),
-            # Breakeven bots
+            ("BadTimingAI", "chase_hype", 0.9),
+            ("HypeChaser", "chase_hype", 1.0),
+            # Breakeven (3)
             ("RandomRick", "random_trader", 1.0),
-            ("RandomRachel", "random_trader", 0.8),
+            ("RandomRachel", "random_trader", 0.9),
             ("MidfieldMike", "midfield_fan", 1.0),
-            # Moderate winners
-            ("DiverseDan", "points_scorer", 1.0),
-            ("DiverseDiana", "points_scorer", 1.2),
-            # Good bots
+            # Moderate (3)
+            ("DiverseDan", "points_scorer", 1.1),
             ("ValueVic", "podium_plus", 1.0),
-            ("TopPickerTom", "top3_picker", 0.8),
-            ("WinnerWill", "top3_picker", 1.2),
-        ]
-    },
-    ReplayDifficulty.HARD: {
-        "players": [
-            # Losing bots (4)
-            ("BackmarkerBot", "backmarker_fan", 1.0),
-            ("BadTimingAI", "chase_hype", 1.0),
-            ("HypeChaser1", "chase_hype", 0.8),
-            ("HypeChaser2", "backmarker_fan", 0.8),
-            # Breakeven bots (4)
-            ("RandomRick", "random_trader", 1.0),
-            ("RandomRachel", "random_trader", 0.8),
-            ("MidfieldMike", "midfield_fan", 1.0),
-            ("MidfieldMary", "midfield_fan", 1.2),
-            # Moderate winners (4)
-            ("DiverseDan", "points_scorer", 1.0),
-            ("DiverseDiana", "points_scorer", 1.2),
-            ("ValueVic", "podium_plus", 1.0),
-            ("ValueVera", "podium_plus", 1.2),
-            # Strong competitors (6)
             ("TopPickerTom", "top3_picker", 1.0),
+            # Strong (4)
             ("TopPickerTina", "top3_picker", 1.2),
-            ("WinnerWill", "top3_picker", 1.4),
-            ("WinnerWanda", "top3_picker", 1.3),
-            ("ProTrader1", "oracle", 0.8),  # Conservative oracle
-            ("ProTrader2", "oracle", 1.0),
+            ("WinnerWill", "top3_picker", 1.3),
+            ("ProTrader1", "oracle", 0.9),
+            ("ProTrader2", "oracle", 1.1),
             # Champion (2)
             ("OracleAI", "oracle", 1.2),
-            ("ChampionAI", "oracle", 1.5),  # Aggressive oracle
-        ]
+            ("ChampionAI", "oracle", 1.4),
+        ]  # 15 total
+    },
+    ReplayDifficulty.HARD: {
+        "starting_balance": Decimal('200'),
+        "investment_fraction": Decimal('0.18'),
+        "players": [
+            # Losing bots (5)
+            ("BackmarkerBot1", "backmarker_fan", 1.2),
+            ("BackmarkerBot2", "backmarker_fan", 1.3),
+            ("BadTimingAI", "chase_hype", 1.2),
+            ("HypeChaser1", "chase_hype", 1.4),
+            ("HypeChaser2", "chase_hype", 1.5),
+            # Breakeven bots (6)
+            ("RandomRick", "random_trader", 1.2),
+            ("RandomRachel", "random_trader", 1.3),
+            ("RandomRob", "random_trader", 1.4),
+            ("MidfieldMike", "midfield_fan", 1.2),
+            ("MidfieldMary", "midfield_fan", 1.3),
+            ("MidfieldMax", "midfield_fan", 1.4),
+            # Moderate winners (6)
+            ("DiverseDan", "points_scorer", 1.4),
+            ("DiverseDiana", "points_scorer", 1.5),
+            ("DiverseDave", "points_scorer", 1.6),
+            ("ValueVic", "podium_plus", 1.4),
+            ("ValueVera", "podium_plus", 1.5),
+            ("ValueVince", "podium_plus", 1.6),
+            # Strong competitors (10) - top3 strategies
+            ("TopPickerTom", "top3_picker", 1.4),
+            ("TopPickerTina", "top3_picker", 1.5),
+            ("TopPickerTed", "top3_picker", 1.6),
+            ("TopPickerTracy", "top3_picker", 1.7),
+            ("WinnerWill", "top3_picker", 1.8),
+            ("WinnerWanda", "top3_picker", 1.9),
+            ("WinnerWade", "top3_picker", 2.0),
+            ("WinnerWendy", "top3_picker", 2.1),
+            ("EliteEric", "top3_picker", 2.2),
+            ("EliteEva", "top3_picker", 2.3),
+            # Oracle champions (8) - perfect foresight
+            ("ProTrader1", "oracle", 1.5),
+            ("ProTrader2", "oracle", 1.6),
+            ("ProTrader3", "oracle", 1.7),
+            ("ProTrader4", "oracle", 1.8),
+            ("OracleAI1", "oracle", 2.0),
+            ("OracleAI2", "oracle", 2.2),
+            ("ChampionAI", "oracle", 2.3),
+            ("GOAT_Trader", "oracle", 2.5),
+        ]  # 35 total
     }
 }
 
 
-def _simulate_ai_season(strategy_type: str, aggression: float, seed: int) -> List[Decimal]:
+def _simulate_ai_season(
+    strategy_type: str,
+    aggression: float,
+    seed: int,
+    starting_balance: Decimal = Decimal('100'),
+    investment_fraction: Decimal = DEFAULT_INVESTMENT_FRACTION
+) -> List[Decimal]:
     """Simulate an AI player's balance through all 24 races.
 
     Args:
         strategy_type: Name of the strategy to use
         aggression: Multiplier for investment fraction
         seed: Random seed for deterministic results
+        starting_balance: Initial balance for this AI
+        investment_fraction: Base investment fraction per race
 
     Returns:
         List of 25 Decimals: balance after each race (index 0 = starting balance)
@@ -315,8 +380,8 @@ def _simulate_ai_season(strategy_type: str, aggression: float, seed: int) -> Lis
     rng = random.Random(seed)
     strategy_class = STRATEGIES.get(strategy_type, RandomStrategy)
 
-    balance = Decimal('100.00')
-    balances = [balance]  # Index 0 = starting balance ($100)
+    balance = starting_balance
+    balances = [balance]  # Index 0 = starting balance
 
     for race_num in range(1, 25):
         # Get race results for payout calculation
@@ -324,7 +389,7 @@ def _simulate_ai_season(strategy_type: str, aggression: float, seed: int) -> Lis
 
         # Determine investment amount
         available = max(Decimal('0'), balance - MIN_RESERVE)
-        investment = min(available, balance * INVESTMENT_FRACTION * Decimal(str(aggression)))
+        investment = min(available, balance * investment_fraction * Decimal(str(aggression)))
 
         if investment <= 0:
             balances.append(balance)
@@ -385,10 +450,17 @@ class ReplayAIService:
         """
         cache_key = (difficulty, name)
         if cache_key not in cls._balance_cache:
+            # Get difficulty-specific settings
+            config = AI_CONFIGS.get(difficulty, {})
+            starting_balance = config.get("starting_balance", Decimal('100'))
+            investment_fraction = config.get("investment_fraction", DEFAULT_INVESTMENT_FRACTION)
+
             # Use name as seed for deterministic results per AI
             seed = hash(name) % (2**31)
             cls._balance_cache[cache_key] = _simulate_ai_season(
-                strategy_type, aggression, seed
+                strategy_type, aggression, seed,
+                starting_balance=starting_balance,
+                investment_fraction=investment_fraction
             )
         return cls._balance_cache[cache_key]
 
@@ -553,3 +625,226 @@ class ReplayAIService:
             Dict with counts per difficulty level
         """
         return ReplayAIService.initialize_ai_players()
+
+    @staticmethod
+    def schedule_ai_trades_for_race(
+        session_id: int,
+        race_number: int,
+        market_opens_at: datetime,
+        duration_seconds: int,
+        difficulty: ReplayDifficulty
+    ) -> List[ReplayScheduledAITrade]:
+        """Schedule AI trades across the market window.
+
+        Distributes trades into time slots based on difficulty:
+        - EASY: AI trades late, user gets better prices
+        - MEDIUM: AI trades evenly distributed
+        - HARD: AI trades early, gets better prices
+
+        Args:
+            session_id: The replay session ID
+            race_number: Current race number (1-24)
+            market_opens_at: When the market opens
+            duration_seconds: Total trading window duration
+            difficulty: Difficulty level for timing distribution
+
+        Returns:
+            List of scheduled AI trades
+        """
+        config = AI_CONFIGS.get(difficulty, AI_CONFIGS[ReplayDifficulty.MEDIUM])
+        timing_slots = AI_TRADE_TIMING.get(difficulty, AI_TRADE_TIMING[ReplayDifficulty.MEDIUM])
+
+        starting_balance = config.get("starting_balance", Decimal('100'))
+        investment_fraction = config.get("investment_fraction", DEFAULT_INVESTMENT_FRACTION)
+
+        # Get markets for this race
+        markets = ReplayMarket.query.filter_by(
+            session_id=session_id,
+            race_number=race_number
+        ).all()
+        market_by_driver = {m.driver_code: m for m in markets}
+
+        scheduled_trades = []
+        rng = random.Random(42 + session_id + race_number)  # Deterministic per session/race
+
+        for name, strategy_type, aggression in config["players"]:
+            strategy_class = STRATEGIES.get(strategy_type, RandomStrategy)
+
+            # Get AI's current simulated balance at this race
+            # We use the pre-race balance (race_number - 1 index, but min 0)
+            balances = ReplayAIService._get_ai_balances(
+                difficulty, name, strategy_type, aggression
+            )
+            balance_index = max(0, race_number - 1)
+            current_balance = balances[balance_index]
+
+            # Calculate investment for this race
+            available = max(Decimal('0'), current_balance - MIN_RESERVE)
+            investment = min(
+                available,
+                current_balance * investment_fraction * Decimal(str(aggression))
+            )
+
+            if investment <= Decimal('0'):
+                continue
+
+            # Get strategy picks
+            picks = strategy_class.get_picks(race_number, rng)
+            if not picks:
+                continue
+
+            # Distribute this AI's trades across time slots
+            # For simplicity, put all trades in a random slot based on timing distribution
+            slot_rand = rng.random()
+            cumulative = 0.0
+            chosen_start, chosen_end = timing_slots[0][0], timing_slots[0][1]
+
+            for start_sec, end_sec, fraction in timing_slots:
+                cumulative += fraction
+                if slot_rand <= cumulative:
+                    chosen_start, chosen_end = start_sec, end_sec
+                    break
+
+            # Random time within the chosen slot
+            trade_offset = rng.uniform(chosen_start, chosen_end)
+            scheduled_time = market_opens_at + timedelta(seconds=trade_offset)
+
+            # Create scheduled trades for each driver pick
+            for driver_code, allocation in picks:
+                market = market_by_driver.get(driver_code)
+                if not market:
+                    continue
+
+                driver_investment = investment * Decimal(str(allocation))
+                # Estimate shares at baseline price (will recalculate at execution)
+                shares = driver_investment / COST_PER_SHARE
+
+                if shares <= Decimal('0'):
+                    continue
+
+                trade = ReplayScheduledAITrade(
+                    session_id=session_id,
+                    market_id=market.id,
+                    ai_player_name=name,
+                    quantity=shares,
+                    scheduled_at=scheduled_time,
+                    executed_at=None,
+                    execution_price=None,
+                    execution_cost=None
+                )
+                db.session.add(trade)
+                scheduled_trades.append(trade)
+
+        db.session.flush()
+        return scheduled_trades
+
+    @staticmethod
+    def execute_pending_ai_trades(
+        session_id: int,
+        up_to_time: Optional[datetime] = None
+    ) -> List[Dict]:
+        """Execute all scheduled AI trades that should have happened by now.
+
+        Uses lazy execution - trades are executed in order when polled.
+
+        Args:
+            session_id: The replay session ID
+            up_to_time: Execute trades scheduled before this time (default: now)
+
+        Returns:
+            List of executed trade details with price impacts
+        """
+        if up_to_time is None:
+            up_to_time = utc_now()
+
+        # Get pending trades scheduled before up_to_time, ordered by time
+        pending_trades = ReplayScheduledAITrade.query.filter(
+            ReplayScheduledAITrade.session_id == session_id,
+            ReplayScheduledAITrade.scheduled_at <= up_to_time,
+            ReplayScheduledAITrade.executed_at.is_(None)
+        ).order_by(ReplayScheduledAITrade.scheduled_at).with_for_update().all()
+
+        executed = []
+
+        for trade in pending_trades:
+            market = ReplayMarket.query.get(trade.market_id)
+            if not market or market.status.value != 'open':
+                # Mark as executed but skip (market closed or doesn't exist)
+                trade.executed_at = utc_now()
+                trade.execution_price = Decimal('0')
+                trade.execution_cost = Decimal('0')
+                continue
+
+            # Get current supply from positions
+            from services.replay_market_service import ReplayMarketService
+            current_supply = ReplayMarketService.get_current_supply(trade.market_id)
+
+            # Calculate cost using bonding curve
+            a = Decimal(str(market.a))
+            b = Decimal(str(market.b))
+            quantity = trade.quantity
+
+            cost = buy_cost(current_supply, quantity, a, b)
+            new_supply = current_supply + quantity
+            new_price = price(new_supply, a, b)
+
+            # Record the trade execution
+            trade.executed_at = utc_now()
+            trade.execution_price = new_price
+            trade.execution_cost = cost
+
+            # Update price history
+            price_entry = ReplayPriceHistory(
+                market_id=trade.market_id,
+                timestamp=utc_now(),
+                price=new_price,
+                supply=new_supply,
+                reason=f"ai_buy_{trade.ai_player_name}"
+            )
+            db.session.add(price_entry)
+
+            executed.append({
+                "ai_player": trade.ai_player_name,
+                "market_id": trade.market_id,
+                "driver_code": market.driver_code,
+                "quantity": float(quantity),
+                "cost": float(cost),
+                "new_price": float(new_price),
+                "new_supply": float(new_supply)
+            })
+
+        if executed:
+            db.session.flush()
+
+        return executed
+
+    @staticmethod
+    def get_pending_ai_trade_count(session_id: int) -> int:
+        """Get count of pending AI trades for a session.
+
+        Args:
+            session_id: The replay session ID
+
+        Returns:
+            Number of pending trades
+        """
+        return ReplayScheduledAITrade.query.filter(
+            ReplayScheduledAITrade.session_id == session_id,
+            ReplayScheduledAITrade.executed_at.is_(None)
+        ).count()
+
+    @staticmethod
+    def clear_scheduled_trades(session_id: int) -> int:
+        """Clear all scheduled AI trades for a session.
+
+        Called when resetting a session.
+
+        Args:
+            session_id: The replay session ID
+
+        Returns:
+            Number of trades deleted
+        """
+        count = ReplayScheduledAITrade.query.filter_by(session_id=session_id).delete()
+        db.session.flush()
+        return count

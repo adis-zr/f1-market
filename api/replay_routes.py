@@ -7,7 +7,7 @@ from auth.helpers import get_current_user_id
 from services.replay_service import (
     ReplayService, ReplaySessionNotFoundError,
     ReplayMarketClosedError, ReplayInsufficientBalanceError,
-    ReplayInsufficientSharesError
+    ReplayInsufficientSharesError, ReplayMarketWindowClosedError
 )
 from services.replay_market_service import ReplayMarketService
 from services.replay_ai_service import ReplayAIService
@@ -174,6 +174,37 @@ def advance_race():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@bp.route('/settle', methods=['POST'])
+def settle_race():
+    """Settle the current race when trading window closes.
+
+    Called by frontend when the timer expires.
+    Executes all remaining AI trades and settles the race.
+    """
+    user_id = get_current_user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    try:
+        session = ReplayService.get_active_session(user_id)
+        if not session:
+            return jsonify({'error': 'No active replay session'}), 404
+
+        result = ReplayService.settle_current_race(session.id)
+        return jsonify(result), 200
+
+    except ReplaySessionNotFoundError as e:
+        return jsonify({'error': str(e)}), 404
+    except ReplayMarketWindowClosedError as e:
+        # This error means window is still open (confusingly named, but semantically correct)
+        return jsonify({'error': str(e), 'code': 'WINDOW_STILL_OPEN'}), 400
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error in settle_race: {e}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 # =============================================================================
 # Markets
 # =============================================================================
@@ -257,6 +288,8 @@ def buy_shares(market_id):
         result = ReplayMarketService.buy_shares(session.id, market_id, quantity)
         return jsonify(result), 200
 
+    except ReplayMarketWindowClosedError as e:
+        return jsonify({'error': str(e), 'code': 'WINDOW_CLOSED'}), 400
     except ReplayMarketClosedError as e:
         return jsonify({'error': str(e)}), 400
     except ReplayInsufficientBalanceError as e:
@@ -299,6 +332,8 @@ def sell_shares(market_id):
         result = ReplayMarketService.sell_shares(session.id, market_id, quantity)
         return jsonify(result), 200
 
+    except ReplayMarketWindowClosedError as e:
+        return jsonify({'error': str(e), 'code': 'WINDOW_CLOSED'}), 400
     except ReplayMarketClosedError as e:
         return jsonify({'error': str(e)}), 400
     except ReplayInsufficientSharesError as e:

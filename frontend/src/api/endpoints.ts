@@ -116,6 +116,7 @@ export const replayApi = {
 
   // Race progression
   advanceRace: () => post<ReplayAdvanceResponse>('/api/replay/advance'),
+  settleRace: () => post<ReplayAdvanceResponse>('/api/replay/settle'),
 
   // Markets
   getMarkets: () => get<{ markets: ReplayMarket[] }>('/api/replay/markets'),

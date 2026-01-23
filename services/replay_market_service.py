@@ -13,8 +13,10 @@ from db.replay_models import (
 from pricing.bonding_curve import price, buy_cost, sell_payout
 from services.replay_service import (
     ReplaySessionNotFoundError, ReplayMarketClosedError,
-    ReplayInsufficientBalanceError, ReplayInsufficientSharesError
+    ReplayInsufficientBalanceError, ReplayInsufficientSharesError,
+    ReplayMarketWindowClosedError, ReplayService
 )
+from services.replay_ai_service import ReplayAIService
 
 
 class ReplayMarketService:
@@ -58,6 +60,13 @@ class ReplayMarketService:
                 raise ReplayMarketClosedError(f"Market {market_id} is not open")
             if market.race_number != session.current_race:
                 raise ReplayMarketClosedError(f"Market is for race {market.race_number}, current race is {session.current_race}")
+
+            # Check if trading window is still open
+            if not ReplayService.is_within_trading_window(session):
+                raise ReplayMarketWindowClosedError("Trading window has closed. Wait for settlement.")
+
+            # Execute pending AI trades first (lazy execution)
+            ReplayAIService.execute_pending_ai_trades(session_id, utc_now())
 
             # Get wallet with lock
             wallet = ReplayWallet.query.filter_by(session_id=session_id).with_for_update().first()
@@ -235,6 +244,14 @@ class ReplayMarketService:
                 raise ReplayMarketClosedError(f"Market is for race {market.race_number}, current race is {session.current_race}")
 
             is_settled_sale = market.status == MarketStatus.SETTLED
+
+            # For OPEN markets, check if trading window is still open
+            if not is_settled_sale and not ReplayService.is_within_trading_window(session):
+                raise ReplayMarketWindowClosedError("Trading window has closed. Wait for settlement.")
+
+            # Execute pending AI trades first for open markets (lazy execution)
+            if not is_settled_sale:
+                ReplayAIService.execute_pending_ai_trades(session_id, utc_now())
 
             # Get position with lock
             position = ReplayPosition.query.filter_by(
@@ -542,6 +559,18 @@ class ReplayMarketService:
 
     @staticmethod
     def _get_market_supply(market_id: int) -> Decimal:
+        """Get current supply for a replay market (internal use).
+
+        Args:
+            market_id: ReplayMarket ID
+
+        Returns:
+            Current supply as Decimal
+        """
+        return ReplayMarketService.get_current_supply(market_id)
+
+    @staticmethod
+    def get_current_supply(market_id: int) -> Decimal:
         """Get current supply for a replay market.
 
         Args:
