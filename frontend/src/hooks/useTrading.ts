@@ -22,14 +22,14 @@ export function useBuyShares(marketId: number) {
 
   return useMutation<BuySharesResponse, Error, BuySharesRequest, MutationContext>({
     mutationFn: (data) => marketsApi.buyShares(marketId, data),
-    onMutate: async () => {
+    onMutate: async (): Promise<MutationContext> => {
       await queryClient.cancelQueries({ queryKey: queryKeys.market(marketId) });
       await queryClient.cancelQueries({ queryKey: queryKeys.position(marketId) });
       await queryClient.cancelQueries({ queryKey: queryKeys.wallet() });
 
-      const previousMarket = queryClient.getQueryData(queryKeys.market(marketId));
-      const previousPosition = queryClient.getQueryData(queryKeys.position(marketId));
-      const previousWallet = queryClient.getQueryData(queryKeys.wallet());
+      const previousMarket = queryClient.getQueryData<Market>(queryKeys.market(marketId));
+      const previousPosition = queryClient.getQueryData<Position>(queryKeys.position(marketId));
+      const previousWallet = queryClient.getQueryData<Wallet>(queryKeys.wallet());
 
       return { previousMarket, previousPosition, previousWallet };
     },
@@ -59,14 +59,14 @@ export function useSellShares(marketId: number) {
 
   return useMutation<SellSharesResponse, Error, SellSharesRequest, MutationContext>({
     mutationFn: (data) => marketsApi.sellShares(marketId, data),
-    onMutate: async () => {
+    onMutate: async (): Promise<MutationContext> => {
       await queryClient.cancelQueries({ queryKey: queryKeys.market(marketId) });
       await queryClient.cancelQueries({ queryKey: queryKeys.position(marketId) });
       await queryClient.cancelQueries({ queryKey: queryKeys.wallet() });
 
-      const previousMarket = queryClient.getQueryData(queryKeys.market(marketId));
-      const previousPosition = queryClient.getQueryData(queryKeys.position(marketId));
-      const previousWallet = queryClient.getQueryData(queryKeys.wallet());
+      const previousMarket = queryClient.getQueryData<Market>(queryKeys.market(marketId));
+      const previousPosition = queryClient.getQueryData<Position>(queryKeys.position(marketId));
+      const previousWallet = queryClient.getQueryData<Wallet>(queryKeys.wallet());
 
       return { previousMarket, previousPosition, previousWallet };
     },
