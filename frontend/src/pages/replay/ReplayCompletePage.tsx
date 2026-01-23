@@ -38,7 +38,8 @@ export function ReplayCompletePage() {
 
   const handlePlayAgain = async () => {
     try {
-      await resetMutation.mutateAsync();
+      // Keep the same difficulty when playing again
+      await resetMutation.mutateAsync(session?.difficulty);
       navigate('/replay');
     } catch {
       // Error handled by mutation
