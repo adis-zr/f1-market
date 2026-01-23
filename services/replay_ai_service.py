@@ -188,8 +188,12 @@ class RandomStrategy(AIStrategy):
             return []
 
         all_drivers = [code for code, _ in race["results"]]
+        if not all_drivers:
+            return []
         # Pick 3 random drivers
         picks = rng.sample(all_drivers, min(3, len(all_drivers)))
+        if not picks:
+            return []
         weight = 1.0 / len(picks)
         return [(driver, weight) for driver in picks]
 
