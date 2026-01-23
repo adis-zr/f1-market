@@ -18,10 +18,14 @@ from data.f1_2024 import RACES_2024, get_points_for_position
 COST_PER_SHARE = Decimal('0.55')
 
 # AI investment per race as fraction of current balance
-INVESTMENT_FRACTION = Decimal('0.15')
+INVESTMENT_FRACTION = Decimal('0.10')
 
 # Minimum balance to keep (don't go all-in)
 MIN_RESERVE = Decimal('5.00')
+
+# Points to return multiplier (25 pts winner = 2.5x return, 0 pts = total loss)
+# This normalizes returns to prevent astronomical compounding
+POINTS_RETURN_DIVISOR = Decimal('10')
 
 
 def _get_race_driver_points(race_number: int) -> Dict[str, int]:
@@ -343,8 +347,10 @@ def _simulate_ai_season(strategy_type: str, aggression: float, seed: int) -> Lis
             cost = shares * COST_PER_SHARE
 
             # Get points earned by this driver
+            # Normalize returns: 25 pts = 2.5x, 10 pts = 1x (breakeven), 0 pts = 0x (total loss)
             points = driver_points.get(driver_code, 0)
-            payout = shares * Decimal(str(points))
+            return_multiplier = Decimal(str(points)) / POINTS_RETURN_DIVISOR
+            payout = cost * return_multiplier
 
             total_cost += cost
             total_payout += payout
