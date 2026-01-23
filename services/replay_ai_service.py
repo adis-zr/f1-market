@@ -406,7 +406,7 @@ class ReplayAIService:
 
         for difficulty, config in AI_CONFIGS.items():
             # Clear existing AI players for this difficulty
-            ReplayAIPlayer.query.filter_by(difficulty=difficulty).delete()
+            ReplayAIPlayer.query.filter_by(difficulty=difficulty).delete(synchronize_session=False)
 
             created = 0
             for name, strategy_type, aggression in config["players"]:
