@@ -58,6 +58,8 @@ def start_replay():
         # Check for existing active session
         existing = ReplayService.get_active_session(user_id)
         if existing:
+            # Ensure AI players exist (in case session predates AI feature)
+            ReplayAIService.ensure_ai_players_exist()
             return jsonify(ReplayService.get_session_state(existing.id)), 200
 
         # Parse difficulty from request

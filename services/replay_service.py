@@ -288,6 +288,9 @@ class ReplayService:
 
             settlement_summary = None
 
+            # Ensure AI players exist before settling (in case session predates AI feature)
+            ReplayAIService.ensure_ai_players_exist()
+
             # If we have a current race, settle it first
             if session.current_race > 0:
                 settlement_summary = ReplayService._settle_race(session, session.current_race)
