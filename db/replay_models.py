@@ -241,7 +241,7 @@ class ReplayScheduledAITrade(db.Model):
 
     # Relationships
     session = db.relationship('ReplaySession', backref='scheduled_ai_trades')
-    market = db.relationship('ReplayMarket', backref='scheduled_ai_trades')
+    market = db.relationship('ReplayMarket', backref=db.backref('scheduled_ai_trades', cascade='all, delete-orphan'))
 
     def __repr__(self):
         status = 'executed' if self.executed_at else 'pending'

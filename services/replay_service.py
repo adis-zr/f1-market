@@ -585,10 +585,8 @@ class ReplayService:
             ReplayPosition.query.filter_by(session_id=session_id).delete(synchronize_session=False)
             ReplayDriverPosition.query.filter_by(session_id=session_id).delete(synchronize_session=False)
             ReplayLedgerEntry.query.filter_by(session_id=session_id).delete(synchronize_session=False)
-            ReplayMarket.query.filter_by(session_id=session_id).delete(synchronize_session=False)
-
-            # Clear scheduled AI trades
             ReplayScheduledAITrade.query.filter_by(session_id=session_id).delete(synchronize_session=False)
+            ReplayMarket.query.filter_by(session_id=session_id).delete(synchronize_session=False)
 
             # Reset wallet
             wallet = session.wallet
