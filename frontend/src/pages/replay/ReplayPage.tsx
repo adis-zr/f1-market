@@ -402,8 +402,8 @@ export function ReplayPage() {
                       </div>
                       <div className={cn(
                         "text-5xl font-bold tabular-nums",
-                        timer.timeRemaining <= 3 ? "text-red-500 animate-pulse" :
-                        timer.timeRemaining <= 5 ? "text-yellow-500" :
+                        timer.timeRemaining <= 5 ? "text-red-500 animate-pulse" :
+                        timer.timeRemaining <= 15 ? "text-yellow-500" :
                         "text-primary"
                       )}>
                         {timer.timeRemaining}s

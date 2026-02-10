@@ -20,7 +20,7 @@ INITIAL_BALANCE = Decimal('100')
 BONDING_A = Decimal('0.1')  # Bonding curve slope
 BONDING_B = Decimal('0.5')  # Bonding curve baseline
 TOTAL_RACES = 24
-DEFAULT_MARKET_DURATION = 10  # seconds
+DEFAULT_MARKET_DURATION = 60  # seconds
 
 
 class ReplaySessionNotFoundError(Exception):
