@@ -39,7 +39,7 @@ class ReplaySession(db.Model):
 
     # Timer-based market fields
     market_opens_at = db.Column(db.DateTime, nullable=True)  # When current race market opened
-    market_duration_seconds = db.Column(db.Integer, default=10, nullable=False)  # Trading window duration
+    market_duration_seconds = db.Column(db.Integer, default=30, nullable=False)  # Trading window duration
 
     # Relationships
     user = db.relationship('User', backref='replay_sessions')

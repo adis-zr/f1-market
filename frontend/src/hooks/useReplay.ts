@@ -378,7 +378,7 @@ export function useMarketTimer(marketTiming: MarketTiming | undefined) {
     canTrade,
     isMarketOpen,
     marketPhase: marketTiming?.market_phase ?? 'pending',
-    durationSeconds: marketTiming?.duration_seconds ?? 10,
+    durationSeconds: marketTiming?.duration_seconds ?? 30,
   };
 }
 

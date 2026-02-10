@@ -19,7 +19,7 @@ depends_on = None
 def upgrade():
     # Add timer columns to replay_sessions
     op.add_column('replay_sessions', sa.Column('market_opens_at', sa.DateTime(), nullable=True))
-    op.add_column('replay_sessions', sa.Column('market_duration_seconds', sa.Integer(), nullable=False, server_default='10'))
+    op.add_column('replay_sessions', sa.Column('market_duration_seconds', sa.Integer(), nullable=False, server_default='30'))
 
     # Create replay_scheduled_ai_trades table
     op.create_table('replay_scheduled_ai_trades',
