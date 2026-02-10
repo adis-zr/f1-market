@@ -11,7 +11,7 @@ from services.replay_service import (
 )
 from services.replay_market_service import ReplayMarketService
 from services.replay_ai_service import ReplayAIService
-from db.replay_models import ReplayDifficulty
+from db.replay_models import ReplayDifficulty, ReplaySession
 from data.f1_2024 import RACES_2024, get_race_info
 
 logger = logging.getLogger(__name__)
@@ -117,9 +117,16 @@ def reset_replay():
         return jsonify({'error': 'Authentication required'}), 401
 
     try:
+        # Find active session first, then fall back to most recent session
+        # (including completed) so "Play Again" works after finishing
         session = ReplayService.get_active_session(user_id)
         if not session:
-            return jsonify({'error': 'No active replay session'}), 404
+            session = ReplaySession.query.filter_by(
+                user_id=user_id
+            ).order_by(ReplaySession.id.desc()).first()
+
+        if not session:
+            return jsonify({'error': 'No replay session found'}), 404
 
         # Parse optional difficulty from request
         data = request.get_json() or {}

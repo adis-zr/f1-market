@@ -32,10 +32,20 @@ export const replayQueryKeys = {
 
 export function useReplaySession(options?: { fastPolling?: boolean }) {
   const fastPolling = options?.fastPolling ?? false;
+  const queryClient = useQueryClient();
 
   return useQuery<ReplayState>({
     queryKey: replayQueryKeys.session,
-    queryFn: () => replayApi.getSession(),
+    queryFn: async () => {
+      try {
+        return await replayApi.getSession();
+      } catch (error) {
+        // On 404 (no active session), clear stale cached data so completed
+        // sessions don't cause redirect loops or show stale UI
+        queryClient.setQueryData(replayQueryKeys.session, undefined);
+        throw error;
+      }
+    },
     staleTime: fastPolling ? 1000 : 30 * 1000,
     // Poll every second during active market for price updates
     refetchInterval: fastPolling ? 1000 : false,
